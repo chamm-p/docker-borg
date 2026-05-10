@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - docker-borg{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<section class="cards">
+    {% for data in agents %}
+    <div class="card">
+        <div class="card-header">
+            <span class="status-dot {{ data.status_class }}"></span>
+            <a href="/agents/{{ data.agent.id }}">{{ data.agent.hostname }}</a>
+        </div>
+        <div class="card-body">
+            <div class="stat">
+                <span class="stat-value">{{ data.container_count }}</span>
+                <span class="stat-label">Container</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{ data.agent.status }}</span>
+                <span class="stat-label">Status</span>
+            </div>
+            {% if data.agent.last_heartbeat %}
+            <div class="stat">
+                <span class="stat-value">{{ data.agent.last_heartbeat.strftime('%H:%M:%S') }}</span>
+                <span class="stat-label">Letzter Heartbeat</span>
+            </div>
+            {% endif %}
+            {% if data.last_job %}
+            <div class="stat">
+                <span class="stat-value badge-{{ data.last_job.status }}">{{ data.last_job.status }}</span>
+                <span class="stat-label">Letzter Job</span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="card-actions">
+            <form method="post" action="/agents/{{ data.agent.id }}/backup">
+                <button type="submit" class="btn btn-primary btn-sm">Backup Now</button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty">
+        <p>Keine Agents registriert.</p>
+        <p>Starte einen Agent mit dem Registrierungstoken, um ihn hier zu sehen.</p>
+    </div>
+    {% endfor %}
+</section>
+
+{% if recent_jobs %}
+<h2>Letzte Jobs</h2>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Agent</th>
+            <th>Typ</th>
+            <th>Status</th>
+            <th>Erstellt</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for job in recent_jobs %}
+        <tr>
+            <td>{{ job.id }}</td>
+            <td>{{ job.agent.hostname if job.agent else '?' }}</td>
+            <td>{{ job.job_type }}</td>
+            <td><span class="badge-{{ job.status }}">{{ job.status }}</span></td>
+            <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '' }}</td>
+            <td><a href="/jobs/{{ job.id }}/logs">Logs</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

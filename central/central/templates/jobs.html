@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Jobs - docker-borg{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Agent</th>
+            <th>Typ</th>
+            <th>Status</th>
+            <th>Erstellt</th>
+            <th>Abgeschlossen</th>
+            <th>Ergebnis</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for data in jobs %}
+        <tr>
+            <td>{{ data.job.id }}</td>
+            <td>
+                {% if data.agent %}
+                <a href="/agents/{{ data.agent.id }}">{{ data.agent.hostname }}</a>
+                {% else %}?{% endif %}
+            </td>
+            <td>{{ data.job.job_type }}</td>
+            <td><span class="badge-{{ data.job.status }}">{{ data.job.status }}</span></td>
+            <td>{{ data.job.created_at.strftime('%Y-%m-%d %H:%M') if data.job.created_at else '' }}</td>
+            <td>{{ data.job.completed_at.strftime('%Y-%m-%d %H:%M') if data.job.completed_at else '-' }}</td>
+            <td>
+                {% if data.result %}
+                {{ data.result.get('nfiles', '') }} files, {{ data.result.get('size_bytes', '') }} bytes
+                {% endif %}
+            </td>
+            <td><a href="/jobs/{{ data.job.id }}/logs">Logs</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

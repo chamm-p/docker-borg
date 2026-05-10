@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Schedules - docker-borg{% endblock %}
+{% block content %}
+<h1>Backup Schedules</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Agent</th>
+            <th>Cron</th>
+            <th>Prune</th>
+            <th>Retention</th>
+            <th>Aktiv</th>
+            <th>Aktionen</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in schedules %}
+        <tr>
+            <td>{{ s.id }}</td>
+            <td>{{ agents.get(s.agent_id, {}).hostname if s.agent_id and agents.get(s.agent_id) else 'Alle' }}</td>
+            <td><code>{{ s.cron_expr }}</code></td>
+            <td>{{ 'Ja' if s.prune_after else 'Nein' }}</td>
+            <td>{{ s.keep_daily }}d / {{ s.keep_weekly }}w / {{ s.keep_monthly }}m</td>
+            <td>
+                <form method="post" action="/schedules/{{ s.id }}/toggle" style="display:inline">
+                    <button type="submit" class="btn btn-sm {{ 'btn-success' if s.enabled else 'btn-secondary' }}">
+                        {{ 'An' if s.enabled else 'Aus' }}
+                    </button>
+                </form>
+            </td>
+            <td>
+                <form method="post" action="/schedules/{{ s.id }}/delete" style="display:inline">
+                    <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Neuer Schedule</h2>
+<form method="post" action="/schedules" class="form-inline">
+    <div class="form-group">
+        <label for="agent_id">Agent:</label>
+        <select name="agent_id" id="agent_id">
+            <option value="">Alle Agents</option>
+            {% for id, a in agents.items() %}
+            <option value="{{ id }}">{{ a.hostname }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="cron_expr">Cron:</label>
+        <input type="text" name="cron_expr" id="cron_expr" value="0 3 * * *" placeholder="0 3 * * *">
+    </div>
+    <div class="form-group">
+        <label>
+            <input type="checkbox" name="prune_after" value="true" checked>
+            Prune nach Backup
+        </label>
+    </div>
+    <div class="form-group">
+        <label for="keep_daily">Täglich:</label>
+        <input type="number" name="keep_daily" id="keep_daily" value="7" min="0" style="width:4rem">
+        <label for="keep_weekly">Wöchentlich:</label>
+        <input type="number" name="keep_weekly" id="keep_weekly" value="4" min="0" style="width:4rem">
+        <label for="keep_monthly">Monatlich:</label>
+        <input type="number" name="keep_monthly" id="keep_monthly" value="6" min="0" style="width:4rem">
+    </div>
+    <button type="submit" class="btn btn-primary">Erstellen</button>
+</form>
+{% endblock %}

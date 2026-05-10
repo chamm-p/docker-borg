@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ job.id }} Logs - docker-borg{% endblock %}
+{% block content %}
+<h1>Job #{{ job.id }} - {{ job.job_type }}</h1>
+<div class="meta">
+    Status: <span class="badge-{{ job.status }}">{{ job.status }}</span> |
+    Erstellt: {{ job.created_at.strftime('%Y-%m-%d %H:%M:%S') if job.created_at else '' }}
+</div>
+
+<h2>Logs</h2>
+{% if logs %}
+<div class="log-output">
+    {% for l in logs %}
+    <div class="log-line log-{{ l.level }}">
+        <span class="log-ts">{{ l.timestamp.strftime('%H:%M:%S') }}</span>
+        <span class="log-level">[{{ l.level }}]</span>
+        {{ l.message }}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="empty">Keine Logs vorhanden.</p>
+{% endif %}
+
+<a href="/jobs">&larr; Alle Jobs</a>
+{% endblock %}

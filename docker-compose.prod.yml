@@ -1,0 +1,37 @@
+services:
+  central:
+    build: ./central
+    container_name: dborg-central
+    restart: unless-stopped
+    ports:
+      - "${CENTRAL_PORT:-8080}:8080"
+    environment:
+      - DBORG_REGISTRATION_TOKEN=${DBORG_REGISTRATION_TOKEN}
+      - DBORG_SECRET_KEY=${DBORG_SECRET_KEY}
+      - DBORG_LOG_LEVEL=INFO
+    volumes:
+      - central-data:/app/data
+
+  agent:
+    build: ./agent
+    container_name: dborg-agent
+    restart: unless-stopped
+    depends_on:
+      - central
+    environment:
+      - DBORG_AGENT_NAME=${DBORG_AGENT_NAME:-local}
+      - DBORG_CENTRAL_URL=http://central:8080
+      - DBORG_REGISTRATION_TOKEN=${DBORG_REGISTRATION_TOKEN}
+      - DBORG_BORG_REPO=/backups
+      - DBORG_BORG_PASSPHRASE=${DBORG_BORG_PASSPHRASE}
+      - DBORG_DOCKER_HOST_DIR=/host/docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DOCKER_HOST_DIR:-.}:/host/docker:ro
+      - agent-data:/data
+      - ${BACKUP_TARGET:-./backups}:/backups
+    command: ["daemon"]
+
+volumes:
+  central-data:
+  agent-data:

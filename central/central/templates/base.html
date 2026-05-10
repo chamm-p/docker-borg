@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}docker-borg{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">docker-borg</div>
+        <div class="nav-links">
+            <a href="/">Dashboard</a>
+            <a href="/jobs">Jobs</a>
+            <a href="/schedules">Schedules</a>
+        </div>
+    </nav>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
