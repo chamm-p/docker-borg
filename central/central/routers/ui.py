@@ -38,8 +38,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "status_class": _agent_status_class(a),
         })
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "agents": agent_data,
         "recent_jobs": recent_jobs,
         "now": datetime.utcnow(),
@@ -61,8 +60,7 @@ def agent_detail(agent_id: int, request: Request, db: Session = Depends(get_db))
         (Schedule.agent_id == agent_id) | (Schedule.agent_id == None)  # noqa: E711
     ).all()
 
-    return templates.TemplateResponse("agent_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": agent,
         "containers": containers,
         "jobs": jobs,
@@ -108,8 +106,7 @@ def jobs_page(request: Request, db: Session = Depends(get_db)):
             "result": json.loads(j.result) if j.result else None,
         })
 
-    return templates.TemplateResponse("jobs.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "jobs.html", {
         "jobs": job_data,
     })
 
@@ -118,8 +115,7 @@ def jobs_page(request: Request, db: Session = Depends(get_db)):
 def job_logs_page(job_id: int, request: Request, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     logs = db.query(JobLog).filter(JobLog.job_id == job_id).order_by(JobLog.timestamp).all()
-    return templates.TemplateResponse("job_logs.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "job_logs.html", {
         "job": job,
         "logs": logs,
     })
@@ -129,8 +125,7 @@ def job_logs_page(job_id: int, request: Request, db: Session = Depends(get_db)):
 def schedules_page(request: Request, db: Session = Depends(get_db)):
     schedules = db.query(Schedule).all()
     agents = {a.id: a for a in db.query(Agent).all()}
-    return templates.TemplateResponse("schedules.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "schedules.html", {
         "schedules": schedules,
         "agents": agents,
     })
