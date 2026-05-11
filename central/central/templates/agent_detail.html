@@ -334,16 +334,12 @@ function revealPassphrase() {
                             </td>
                             <td class="text-muted small">{{ c.container_name }}</td>
                             <td style="max-width: 360px;">
-                                {% if c.compose_dir %}
-                                <code class="small">{{ c.compose_dir }}</code>
-                                {% else %}
                                 <form method="post" action="/agents/{{ agent.id }}/containers/{{ c.id }}/path" class="d-flex gap-2 m-0" style="max-width: 100%;">
-                                    <input type="text" name="manual_compose_dir" class="form-control form-control-sm" value="{{ c.manual_compose_dir or '' }}" placeholder="/home/user/docker/{{ c.compose_project }}">
+                                    <input type="text" name="manual_compose_dir" class="form-control form-control-sm" value="{{ c.manual_compose_dir or '' }}" placeholder="{% if c.compose_dir %}leer = erkannten Pfad nutzen{% else %}/home/user/docker/{{ c.compose_project }}{% endif %}">
                                     <button type="submit" class="btn btn-sm btn-outline-secondary" title="Pfad speichern"><i class="bi bi-check-lg"></i></button>
                                 </form>
-                                {% if c.manual_compose_dir %}
-                                <small class="text-muted">Manuell gesetzt</small>
-                                {% endif %}
+                                {% if c.compose_dir %}
+                                <small class="text-muted d-block mt-1">{% if c.manual_compose_dir %}Übersteuert: <code>{{ c.compose_dir }}</code>{% else %}Erkannt: <code>{{ c.compose_dir }}</code>{% endif %}</small>
                                 {% endif %}
                             </td>
                             <td>

@@ -106,7 +106,8 @@ def _collect_root_files(compose_dir_local: Path, volume_dirs: set[str], max_dept
     return sorted(set(files))
 
 
-def discover_containers() -> list[ContainerInfo]:
+def discover_containers(manual_paths: dict[str, str] | None = None) -> list[ContainerInfo]:
+    manual_paths = manual_paths or {}
     client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
     containers = client.containers.list(all=False)
 
@@ -121,7 +122,7 @@ def discover_containers() -> list[ContainerInfo]:
 
     for project, ctrs in project_containers.items():
         primary = ctrs[0]
-        compose_dir_host = _get_compose_dir(primary) or ""
+        compose_dir_host = manual_paths.get(project) or _get_compose_dir(primary) or ""
 
         all_volume_dirs: set[str] = set()
         for c in ctrs:

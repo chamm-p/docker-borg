@@ -84,7 +84,7 @@ def cmd_daemon(args):
 
     while not _shutdown:
         try:
-            containers = discover_containers()
+            containers = discover_containers(client.manual_paths)
             client.heartbeat(containers)
 
             jobs = client.poll_jobs()

@@ -17,6 +17,7 @@ class CentralClient:
         self._token: str | None = None
         self._load_token()
         self._http = httpx.Client(base_url=settings.central_url, timeout=30)
+        self.manual_paths: dict[str, str] = {}
 
     def _load_token(self):
         if settings.token_file.exists():
@@ -48,6 +49,9 @@ class CentralClient:
         return self._token is not None
 
     def _apply_backup_config(self, data: dict):
+        paths = data.get("manual_paths", {})
+        if isinstance(paths, dict):
+            self.manual_paths = {k: str(v) for k, v in paths.items() if v}
         backup = data.get("backup", {})
         if not isinstance(backup, dict):
             return

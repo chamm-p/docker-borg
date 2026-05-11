@@ -34,6 +34,7 @@ class AgentRegisterResponse(BaseModel):
 class HeartbeatResponse(BaseModel):
     ack: bool = True
     backup: BackupConfig = BackupConfig()
+    manual_paths: dict[str, str] = {}
 
 
 class ContainerPayload(BaseModel):

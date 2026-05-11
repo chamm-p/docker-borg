@@ -136,4 +136,10 @@ def heartbeat(
             db.delete(row)
 
     db.commit()
-    return HeartbeatResponse(backup=_backup_config(agent))
+
+    manual_paths = {
+        row.compose_project: row.manual_compose_dir
+        for row in db.query(Container).filter(Container.agent_id == agent.id).all()
+        if row.manual_compose_dir
+    }
+    return HeartbeatResponse(backup=_backup_config(agent), manual_paths=manual_paths)
