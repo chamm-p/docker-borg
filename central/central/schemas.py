@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel
 
 
 class AgentRegisterRequest(BaseModel):
     hostname: str
-    agent_version: str = "0.1.0"
+    agent_version: str = "0.2.0"
     token: str
 
 
 class BackupConfig(BaseModel):
-    backup_type: str = "ssh"
+    backup_type: str = "scp"
     borg_repo: str = ""
     borg_passphrase: str = ""
+    scp_host: str = ""
+    scp_user: str = ""
+    scp_path: str = ""
+    scp_port: int = 22
+    local_path: str = ""
     webdav_url: str = ""
     webdav_user: str = ""
     webdav_password: str = ""
@@ -45,6 +48,7 @@ class ContainerPayload(BaseModel):
 
 class HeartbeatRequest(BaseModel):
     hostname: str
+    agent_version: str = "0.2.0"
     containers: list[ContainerPayload]
 
 
@@ -76,22 +80,3 @@ class CreateJobRequest(BaseModel):
     job_type: str
     containers: list[str] | None = None
     params: dict = {}
-
-
-class ScheduleCreate(BaseModel):
-    agent_id: int | None = None
-    cron_expr: str = "0 3 * * *"
-    enabled: bool = True
-    prune_after: bool = True
-    keep_daily: int = 7
-    keep_weekly: int = 4
-    keep_monthly: int = 6
-
-
-class ScheduleUpdate(BaseModel):
-    cron_expr: str | None = None
-    enabled: bool | None = None
-    prune_after: bool | None = None
-    keep_daily: int | None = None
-    keep_weekly: int | None = None
-    keep_monthly: int | None = None

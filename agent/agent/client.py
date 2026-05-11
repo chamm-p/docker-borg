@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import socket
 
@@ -8,6 +7,7 @@ import httpx
 
 from .config import settings
 from .models import ContainerInfo, Job, JobType, LogEntry
+from .version import AGENT_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,15 @@ class CentralClient:
         self._token = token
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         settings.token_file.write_text(token)
-        logger.info("Saved agent token to %s", settings.token_file)
+        logger.info("Saved agent token")
+
+    def _clear_token(self):
+        self._token = None
+        try:
+            settings.token_file.unlink()
+        except FileNotFoundError:
+            pass
+        logger.info("Cleared agent token; will re-register")
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
@@ -40,20 +48,22 @@ class CentralClient:
         return self._token is not None
 
     def _apply_backup_config(self, data: dict):
-        backup = data.get("backup", data)
-        if isinstance(backup, dict):
-            repo = backup.get("borg_repo", "")
-            passphrase = backup.get("borg_passphrase", "")
-            if repo:
-                settings.borg_repo = repo
-                logger.info("Borg repo set from central: %s", repo)
-            if passphrase:
-                settings.borg_passphrase = passphrase
-
-            settings.backup_type = backup.get("backup_type", "ssh")
-            settings.webdav_url = backup.get("webdav_url", "")
-            settings.webdav_user = backup.get("webdav_user", "")
-            settings.webdav_password = backup.get("webdav_password", "")
+        backup = data.get("backup", {})
+        if not isinstance(backup, dict):
+            return
+        settings.backup_type = backup.get("backup_type", "scp")
+        settings.borg_repo = backup.get("borg_repo", "") or ""
+        if backup.get("borg_passphrase"):
+            settings.borg_passphrase = backup["borg_passphrase"]
+        settings.scp_host = backup.get("scp_host", "")
+        settings.scp_user = backup.get("scp_user", "")
+        settings.scp_path = backup.get("scp_path", "")
+        settings.scp_port = int(backup.get("scp_port") or 22)
+        settings.local_path = backup.get("local_path", "")
+        settings.webdav_url = backup.get("webdav_url", "")
+        settings.webdav_user = backup.get("webdav_user", "")
+        if backup.get("webdav_password"):
+            settings.webdav_password = backup["webdav_password"]
 
     def register(self) -> bool:
         hostname = settings.agent_name or socket.gethostname()
@@ -62,7 +72,7 @@ class CentralClient:
                 "/api/v1/agents/register",
                 json={
                     "hostname": hostname,
-                    "agent_version": "0.1.0",
+                    "agent_version": AGENT_VERSION,
                     "token": settings.registration_token,
                 },
                 headers={"Content-Type": "application/json"},
@@ -79,72 +89,72 @@ class CentralClient:
             logger.warning("Cannot reach central for registration: %s", e)
             return False
 
-    def heartbeat(self, containers: list[ContainerInfo]) -> bool:
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response | None:
         try:
-            resp = self._http.post(
-                "/api/v1/agents/heartbeat",
-                json={
-                    "hostname": settings.agent_name or socket.gethostname(),
-                    "containers": [
-                        {
-                            "container_id": c.container_id,
-                            "container_name": c.container_name,
-                            "compose_project": c.compose_project,
-                            "compose_dir": c.compose_dir,
-                            "root_files": c.root_files,
-                            "image": c.image,
-                            "status": c.status,
-                            "has_volumes": c.has_volumes,
-                        }
-                        for c in containers
-                    ],
-                },
-                headers=self._headers(),
-            )
-            if resp.status_code == 200:
-                self._apply_backup_config(resp.json())
-                return True
-            return False
+            resp = self._http.request(method, path, headers=self._headers(), **kwargs)
         except httpx.RequestError as e:
-            logger.warning("Heartbeat failed: %s", e)
-            return False
+            logger.warning("Request %s %s failed: %s", method, path, e)
+            return None
+        if resp.status_code == 401 and self._token:
+            logger.warning("Central rejected token (401); re-registering")
+            self._clear_token()
+            if self.register():
+                try:
+                    return self._http.request(method, path, headers=self._headers(), **kwargs)
+                except httpx.RequestError as e:
+                    logger.warning("Retry %s %s failed: %s", method, path, e)
+                    return None
+        return resp
+
+    def heartbeat(self, containers: list[ContainerInfo]) -> bool:
+        body = {
+            "hostname": settings.agent_name or socket.gethostname(),
+            "agent_version": AGENT_VERSION,
+            "containers": [
+                {
+                    "container_id": c.container_id,
+                    "container_name": c.container_name,
+                    "compose_project": c.compose_project,
+                    "compose_dir": c.compose_dir,
+                    "root_files": c.root_files,
+                    "image": c.image,
+                    "status": c.status,
+                    "has_volumes": c.has_volumes,
+                }
+                for c in containers
+            ],
+        }
+        resp = self._request("POST", "/api/v1/agents/heartbeat", json=body)
+        if resp is not None and resp.status_code == 200:
+            self._apply_backup_config(resp.json())
+            return True
+        return False
 
     def poll_jobs(self) -> list[Job]:
-        try:
-            resp = self._http.get("/api/v1/jobs/pending", headers=self._headers())
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-            jobs = []
-            for j in data.get("jobs", []):
-                jobs.append(Job(
-                    job_id=j["job_id"],
-                    job_type=JobType(j["job_type"]),
-                    containers=j.get("containers"),
-                    params=j.get("params", {}),
-                ))
-            return jobs
-        except httpx.RequestError as e:
-            logger.warning("Job poll failed: %s", e)
+        resp = self._request("GET", "/api/v1/jobs/pending")
+        if resp is None or resp.status_code != 200:
             return []
+        data = resp.json()
+        return [
+            Job(
+                job_id=j["job_id"],
+                job_type=JobType(j["job_type"]),
+                containers=j.get("containers"),
+                params=j.get("params", {}),
+            )
+            for j in data.get("jobs", [])
+        ]
 
     def report_job(self, job_id: int, status: str, result: dict | None = None, logs: list[LogEntry] | None = None):
-        try:
-            body: dict = {"status": status}
-            if result:
-                body["result"] = result
-            if logs:
-                body["logs"] = [
-                    {"level": l.level, "message": l.message, "timestamp": l.timestamp}
-                    for l in logs
-                ]
-            self._http.put(
-                f"/api/v1/jobs/{job_id}/status",
-                json=body,
-                headers=self._headers(),
-            )
-        except httpx.RequestError as e:
-            logger.warning("Job report failed: %s", e)
+        body: dict = {"status": status}
+        if result:
+            body["result"] = result
+        if logs:
+            body["logs"] = [
+                {"level": l.level, "message": l.message, "timestamp": l.timestamp}
+                for l in logs
+            ]
+        self._request("PUT", f"/api/v1/jobs/{job_id}/status", json=body)
 
     def close(self):
         self._http.close()

@@ -8,6 +8,7 @@ services:
     devices:
       - /dev/fuse
     environment:
+      - TZ=Europe/Zurich
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
       - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080
       - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN

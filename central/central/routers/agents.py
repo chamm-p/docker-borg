@@ -13,14 +13,20 @@ from ..database import get_db
 from ..models import Agent, Container
 from ..schemas import AgentRegisterRequest, AgentRegisterResponse, BackupConfig, HeartbeatRequest, HeartbeatResponse
 
+
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 
 def _backup_config(agent: Agent) -> BackupConfig:
     return BackupConfig(
-        backup_type=agent.backup_type or "ssh",
+        backup_type=agent.backup_type or "scp",
         borg_repo=agent.borg_repo or "",
         borg_passphrase=agent.borg_passphrase or "",
+        scp_host=agent.scp_host or "",
+        scp_user=agent.scp_user or "",
+        scp_path=agent.scp_path or "",
+        scp_port=agent.scp_port or 22,
+        local_path=agent.local_path or "",
         webdav_url=agent.webdav_url or "",
         webdav_user=agent.webdav_user or "",
         webdav_password=agent.webdav_password or "",
@@ -82,7 +88,7 @@ def register(req: AgentRegisterRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/heartbeat")
+@router.post("/heartbeat", response_model=HeartbeatResponse)
 def heartbeat(
     req: HeartbeatRequest,
     agent: Agent = Depends(get_current_agent),
@@ -90,22 +96,40 @@ def heartbeat(
 ):
     agent.last_heartbeat = datetime.utcnow()
     agent.status = "online"
+    if req.agent_version:
+        agent.agent_version = req.agent_version
 
-    db.query(Container).filter(Container.agent_id == agent.id).delete()
+    existing = {c.container_id: c for c in db.query(Container).filter(Container.agent_id == agent.id).all()}
+    seen_ids: set[str] = set()
 
     for c in req.containers:
-        container = Container(
-            agent_id=agent.id,
-            container_id=c.container_id,
-            container_name=c.container_name,
-            compose_project=c.compose_project,
-            compose_dir=c.compose_dir,
-            root_files=json.dumps(c.root_files),
-            image=c.image,
-            status=c.status,
-            has_volumes=c.has_volumes,
-        )
-        db.add(container)
+        seen_ids.add(c.container_id)
+        existing_row = existing.get(c.container_id)
+        if existing_row:
+            existing_row.container_name = c.container_name
+            existing_row.compose_project = c.compose_project
+            existing_row.compose_dir = c.compose_dir
+            existing_row.root_files = json.dumps(c.root_files)
+            existing_row.image = c.image
+            existing_row.status = c.status
+            existing_row.has_volumes = c.has_volumes
+        else:
+            db.add(Container(
+                agent_id=agent.id,
+                container_id=c.container_id,
+                container_name=c.container_name,
+                compose_project=c.compose_project,
+                compose_dir=c.compose_dir,
+                root_files=json.dumps(c.root_files),
+                image=c.image,
+                status=c.status,
+                has_volumes=c.has_volumes,
+                backup_enabled=True,
+            ))
+
+    for cid, row in existing.items():
+        if cid not in seen_ids:
+            db.delete(row)
 
     db.commit()
     return HeartbeatResponse(backup=_backup_config(agent))

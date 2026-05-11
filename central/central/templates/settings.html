@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen – docker-borg{% endblock %}
+{% block content %}
+<h1>Einstellungen</h1>
+
+{% set q = request.query_params %}
+{% if q.get('ok') %}<div class="banner banner-success">Passwort geändert.</div>{% endif %}
+{% if q.get('error') == 'current_wrong' %}<div class="banner banner-error">Aktuelles Passwort ist nicht korrekt.</div>{% endif %}
+{% if q.get('error') == 'mismatch' %}<div class="banner banner-error">Neue Passwörter stimmen nicht überein.</div>{% endif %}
+{% if q.get('error') == 'too_short' %}<div class="banner banner-error">Passwort muss mindestens 8 Zeichen lang sein.</div>{% endif %}
+
+<div class="panel">
+    <div class="panel-head">
+        <h2>Admin-Passwort ändern</h2>
+        <p>Das Passwort wird in der Datenbank gespeichert und überschreibt das initial via Environment gesetzte.</p>
+    </div>
+    <form method="post" action="/settings/password">
+        <div class="field">
+            <label for="current_password">Aktuelles Passwort</label>
+            <input type="password" name="current_password" id="current_password" required>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label for="new_password">Neues Passwort</label>
+                <input type="password" name="new_password" id="new_password" required minlength="8">
+            </div>
+            <div class="field">
+                <label for="confirm_password">Bestätigen</label>
+                <input type="password" name="confirm_password" id="confirm_password" required minlength="8">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Passwort ändern</button>
+    </form>
+</div>
+
+<div class="panel">
+    <div class="panel-head"><h2>System</h2></div>
+    <p><strong>Version:</strong> v{{ app_version }}</p>
+    <p class="muted text-small">Datenbank-Migrationen werden beim Start automatisch ausgeführt.</p>
+</div>
+{% endblock %}

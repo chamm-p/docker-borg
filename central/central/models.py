@@ -12,15 +12,29 @@ class Agent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     hostname: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     token_hash: Mapped[str] = mapped_column(String(255))
-    backup_type: Mapped[str] = mapped_column(String(20), default="ssh")
+    agent_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="offline")
+    last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    backup_type: Mapped[str] = mapped_column(String(20), default="scp")
     borg_repo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     borg_passphrase: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    scp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scp_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    scp_port: Mapped[int] = mapped_column(Integer, default=22)
+
+    local_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     webdav_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     webdav_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
     webdav_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="offline")
-    agent_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    last_connection_check: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_connection_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_connection_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     containers: Mapped[list["Container"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
@@ -32,15 +46,16 @@ class Container(Base):
     __tablename__ = "containers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_id: Mapped[int] = mapped_column(Integer, ForeignKey("agents.id"), index=True)
+    agent_id: Mapped[int] = mapped_column(Integer, ForeignKey("agents.id", ondelete="CASCADE"), index=True)
     container_id: Mapped[str] = mapped_column(String(100))
     container_name: Mapped[str] = mapped_column(String(255))
     compose_project: Mapped[str] = mapped_column(String(255))
-    compose_dir: Mapped[str] = mapped_column(String(500))
+    compose_dir: Mapped[str] = mapped_column(String(500), default="")
     root_files: Mapped[str] = mapped_column(Text, default="[]")
-    image: Mapped[str] = mapped_column(String(500))
+    image: Mapped[str] = mapped_column(String(500), default="")
     status: Mapped[str] = mapped_column(String(20), default="running")
     has_volumes: Mapped[bool] = mapped_column(Boolean, default=False)
+    backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     agent: Mapped["Agent"] = relationship(back_populates="containers")
@@ -50,7 +65,13 @@ class Schedule(Base):
     __tablename__ = "schedules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("agents.id"), nullable=True)
+    agent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("agents.id", ondelete="CASCADE"), nullable=True)
+    name: Mapped[str] = mapped_column(String(100), default="Backup")
+    schedule_kind: Mapped[str] = mapped_column(String(20), default="daily")
+    hour: Mapped[int] = mapped_column(Integer, default=3)
+    minute: Mapped[int] = mapped_column(Integer, default=0)
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cron_expr: Mapped[str] = mapped_column(String(100), default="0 3 * * *")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     prune_after: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -66,8 +87,8 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_id: Mapped[int] = mapped_column(Integer, ForeignKey("agents.id"), index=True)
-    schedule_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("schedules.id"), nullable=True)
+    agent_id: Mapped[int] = mapped_column(Integer, ForeignKey("agents.id", ondelete="CASCADE"), index=True)
+    schedule_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("schedules.id", ondelete="SET NULL"), nullable=True)
     job_type: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     containers: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -85,9 +106,17 @@ class JobLog(Base):
     __tablename__ = "job_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    job_id: Mapped[int] = mapped_column(Integer, ForeignKey("jobs.id"), index=True)
+    job_id: Mapped[int] = mapped_column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     level: Mapped[str] = mapped_column(String(20))
     message: Mapped[str] = mapped_column(Text)
 
     job: Mapped["Job"] = relationship(back_populates="logs")
+
+
+class AppSetting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

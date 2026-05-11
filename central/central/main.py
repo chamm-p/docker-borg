@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
-from .database import init_db
+from .database import run_migrations
 from .routers import agents, jobs, schedules, ui
 from .services.scheduler import scheduler_loop
 from .version import APP_VERSION
@@ -21,13 +21,13 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    run_migrations()
     task = asyncio.create_task(scheduler_loop())
     yield
     task.cancel()
 
 
-app = FastAPI(title="docker-borg central", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="docker-borg central", version=APP_VERSION, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="central/static"), name="static")
 
 
@@ -43,7 +43,9 @@ async def admin_auth(request: Request, call_next):
         try:
             decoded = base64.b64decode(auth[6:]).decode()
             user, password = decoded.split(":", 1)
-            if user == "admin" and secrets.compare_digest(password, settings.admin_password):
+            from .services.admin import get_admin_password
+            current = get_admin_password()
+            if user == "admin" and secrets.compare_digest(password, current):
                 return await call_next(request)
         except Exception:
             pass

@@ -9,7 +9,7 @@ from croniter import croniter
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
-from ..models import Agent, Job, Schedule
+from ..models import Agent, Container, Job, Schedule
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -58,10 +58,17 @@ def _create_scheduled_jobs(db: Session):
             if pending:
                 continue
 
+            enabled_containers = (
+                db.query(Container)
+                .filter(Container.agent_id == agent.id, Container.backup_enabled == True)  # noqa: E712
+                .all()
+            )
+            projects = sorted({c.compose_project for c in enabled_containers if c.compose_project})
             job = Job(
                 agent_id=agent.id,
                 schedule_id=schedule.id,
                 job_type="backup",
+                containers=json.dumps(projects) if projects else None,
             )
             db.add(job)
             logger.info("Scheduled backup job for agent %s (schedule %d)", agent.hostname, schedule.id)

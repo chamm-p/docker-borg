@@ -6,6 +6,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      - TZ=Europe/Zurich
       - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
       - DBORG_ADMIN_PASSWORD=CHANGE_ME_ADMIN_PASSWORD
       - DBORG_SECRET_KEY=CHANGE_ME_SECRET_KEY

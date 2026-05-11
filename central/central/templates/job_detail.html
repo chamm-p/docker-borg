@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ job.id }} – docker-borg{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 style="margin-bottom: 4px;">Job #{{ job.id }} – {{ job.job_type }}</h1>
+        <div class="page-header-meta">
+            <span><strong>Agent:</strong> {% if agent %}<a href="/agents/{{ agent.id }}">{{ agent.hostname }}</a>{% else %}?{% endif %}</span>
+            <span><strong>Status:</strong> <span id="job-status" class="badge badge-{{ job.status }}">{{ job.status }}</span></span>
+            <span><strong>Erstellt:</strong> {{ job.created_at|localtime }}</span>
+            {% if job.completed_at %}<span><strong>Abgeschlossen:</strong> {{ job.completed_at|localtime }}</span>{% endif %}
+        </div>
+    </div>
+    <a href="javascript:history.back()" class="btn btn-secondary">Zurück</a>
+</div>
+
+<div class="panel">
+    <div class="panel-head"><h2>Logs</h2></div>
+    <div class="log-box" id="log-box">
+        {% for l in logs %}
+        <div class="log-line">
+            <span class="log-line-ts">{{ l.timestamp|localtime('%H:%M:%S') }}</span>
+            <span class="log-line-level {{ l.level }}">{{ l.level|upper }}</span>
+            <span class="log-line-msg">{{ l.message }}</span>
+        </div>
+        {% else %}
+        <div class="muted">Noch keine Logs.</div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+(function() {
+    var status = "{{ job.status }}";
+    if (status === 'pending' || status === 'running') {
+        var jobId = {{ job.id }};
+        var box = document.getElementById('log-box');
+        var statusEl = document.getElementById('job-status');
+        var interval = setInterval(function() {
+            fetch('/api/v1/ui/jobs/' + jobId + '/logs').then(r => r.json()).then(data => {
+                statusEl.textContent = data.status;
+                statusEl.className = 'badge badge-' + data.status;
+                if (data.logs && data.logs.length) {
+                    box.innerHTML = data.logs.map(l =>
+                        '<div class="log-line">' +
+                        '<span class="log-line-ts">' + l.timestamp.split(' ')[1] + '</span>' +
+                        '<span class="log-line-level ' + l.level + '">' + l.level.toUpperCase() + '</span>' +
+                        '<span class="log-line-msg"></span></div>'
+                    ).join('');
+                    var msgs = box.querySelectorAll('.log-line-msg');
+                    data.logs.forEach((l, i) => { msgs[i].textContent = l.message; });
+                    box.scrollTop = box.scrollHeight;
+                }
+                if (data.status === 'success' || data.status === 'failed') {
+                    clearInterval(interval);
+                }
+            });
+        }, 2000);
+    }
+})();
+</script>
+{% endblock %}

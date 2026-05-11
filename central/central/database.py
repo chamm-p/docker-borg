@@ -1,7 +1,14 @@
+import logging
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -21,6 +28,10 @@ def get_db():
         db.close()
 
 
-def init_db():
-    from . import models  # noqa: F401
-    Base.metadata.create_all(bind=engine)
+def run_migrations() -> None:
+    config_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+    cfg = Config(str(config_path))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    logger.info("Running database migrations…")
+    command.upgrade(cfg, "head")
+    logger.info("Database migrations complete")

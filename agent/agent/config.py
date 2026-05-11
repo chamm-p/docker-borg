@@ -9,9 +9,17 @@ class Settings(BaseSettings):
     registration_token: str = ""
     poll_interval: int = 30
 
-    backup_type: str = "ssh"
+    backup_type: str = "scp"
     borg_repo: str = ""
     borg_passphrase: str = ""
+
+    scp_host: str = ""
+    scp_user: str = ""
+    scp_path: str = ""
+    scp_port: int = 22
+
+    local_path: str = ""
+
     webdav_url: str = ""
     webdav_user: str = ""
     webdav_password: str = ""
