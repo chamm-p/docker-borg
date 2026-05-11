@@ -114,7 +114,9 @@
     <div class="panel-head"><h2>Agent entfernen</h2></div>
     <p class="muted">Entfernt den Agent aus der Zentrale. Der Agent registriert sich beim nächsten Heartbeat automatisch neu, falls er noch läuft.</p>
     <form method="post" action="/agents/{{ agent.id }}/delete" onsubmit="return confirm('Agent „{{ agent.hostname }}“ wirklich entfernen?')">
-        <button type="submit" class="btn btn-danger btn-sm">Agent entfernen</button>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-danger">Agent entfernen</button>
+        </div>
     </form>
 </div>
 
@@ -195,7 +197,7 @@
             <p class="field-hint">Repository wird automatisch unter <code>/mnt/webdav/borg</code> abgelegt.</p>
         </div>
 
-        <div class="btn-group" style="margin-top: var(--space-4);">
+        <div class="form-actions">
             <button type="submit" class="btn btn-primary">Speichern</button>
             <button type="submit" class="btn btn-secondary" formaction="/agents/{{ agent.id }}/target/check" formnovalidate>Verbindung testen</button>
         </div>
@@ -226,18 +228,19 @@ function toggleTargetType() {
             <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="leer lassen für automatisch generierte Passphrase">
             <span class="field-hint">Mindestens 16 Zeichen empfohlen. Bei leerem Feld wird beim Speichern eine 32-Zeichen-Passphrase automatisch generiert.</span>
         </div>
-        <button type="submit" class="btn btn-primary">Speichern</button>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Speichern</button>
+        </div>
     </form>
 
     {% if agent.borg_passphrase %}
-    <div class="spacer"></div>
     <h3>Passphrase exportieren</h3>
     <p class="muted">Bewahre die Passphrase ausserhalb dieser Zentrale auf (Passwort-Manager, ausgedruckt im Safe).</p>
     <div class="btn-group">
         <button type="button" class="btn btn-secondary" onclick="revealPassphrase()">Anzeigen</button>
         <a href="/agents/{{ agent.id }}/passphrase/download" class="btn btn-secondary">Als Datei herunterladen</a>
     </div>
-    <div id="passphrase-reveal" style="display:none; margin-top: var(--space-3);">
+    <div id="passphrase-reveal" style="display:none; margin-top: var(--space-4);">
         <div class="log-box mono" style="padding: var(--space-4); user-select: all;">
             <span id="passphrase-value"></span>
         </div>
@@ -263,7 +266,7 @@ function revealPassphrase() {
     </div>
 
     {% if containers %}
-    <form method="post" action="/agents/{{ agent.id }}/containers">
+    <form method="post" action="/agents/{{ agent.id }}/containers" class="wide">
         <div class="table-wrap">
             <table>
                 <thead>
@@ -302,8 +305,9 @@ function revealPassphrase() {
                 </tbody>
             </table>
         </div>
-        <div class="spacer"></div>
-        <button type="submit" class="btn btn-primary">Auswahl speichern</button>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Auswahl speichern</button>
+        </div>
     </form>
     {% else %}
     <p class="muted">Noch keine Container vom Agent gemeldet.</p>
@@ -373,12 +377,12 @@ function revealPassphrase() {
         <div class="field-row">
             <div class="field">
                 <label for="hour">Uhrzeit</label>
-                <div class="flex-row">
-                    <select name="hour" id="hour" style="width: auto;">
+                <div class="time-picker">
+                    <select name="hour" id="hour">
                         {% for h in range(24) %}<option value="{{ h }}" {% if h == 3 %}selected{% endif %}>{{ '%02d'|format(h) }}</option>{% endfor %}
                     </select>
-                    <span>:</span>
-                    <select name="minute" style="width: auto;">
+                    <span class="time-sep">:</span>
+                    <select name="minute">
                         {% for m in [0, 15, 30, 45] %}<option value="{{ m }}">{{ '%02d'|format(m) }}</option>{% endfor %}
                     </select>
                 </div>
@@ -401,10 +405,12 @@ function revealPassphrase() {
             </div>
         </div>
 
-        <h3 style="margin-top: var(--space-5);">Aufbewahrung</h3>
-        <label class="checkbox-field">
-            <input type="checkbox" name="prune_after" checked> Alte Archive nach Backup ausdünnen (prune)
-        </label>
+        <h3>Aufbewahrung</h3>
+        <div class="field">
+            <label class="checkbox-field">
+                <input type="checkbox" name="prune_after" checked> Alte Archive nach Backup ausdünnen (prune)
+            </label>
+        </div>
         <div class="field-row">
             <div class="field">
                 <label for="keep_daily">Tägliche behalten</label>
@@ -420,12 +426,15 @@ function revealPassphrase() {
             </div>
         </div>
 
-        <label class="checkbox-field" style="margin-top: var(--space-3);">
-            <input type="checkbox" name="enabled" checked> Zeitplan sofort aktivieren
-        </label>
+        <div class="field">
+            <label class="checkbox-field">
+                <input type="checkbox" name="enabled" checked> Zeitplan sofort aktivieren
+            </label>
+        </div>
 
-        <div class="spacer"></div>
-        <button type="submit" class="btn btn-primary">Zeitplan anlegen</button>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Zeitplan anlegen</button>
+        </div>
     </form>
 </div>
 
@@ -483,7 +492,9 @@ function toggleScheduleFields() {
             <input type="text" name="archive" id="archive" placeholder="{{ agent.hostname }}-projekt-20260510T030000" required>
             <span class="field-hint">Format: <code>{{ agent.hostname }}-&lt;projekt&gt;-&lt;timestamp&gt;</code></span>
         </div>
-        <button type="submit" class="btn btn-warning">Wiederherstellen</button>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-warning">Wiederherstellen</button>
+        </div>
     </form>
 </div>
 {% endif %}

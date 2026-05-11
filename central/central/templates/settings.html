@@ -19,17 +19,18 @@
             <label for="current_password">Aktuelles Passwort</label>
             <input type="password" name="current_password" id="current_password" required>
         </div>
-        <div class="field-row">
-            <div class="field">
-                <label for="new_password">Neues Passwort</label>
-                <input type="password" name="new_password" id="new_password" required minlength="8">
-            </div>
-            <div class="field">
-                <label for="confirm_password">Bestätigen</label>
-                <input type="password" name="confirm_password" id="confirm_password" required minlength="8">
-            </div>
+        <div class="field">
+            <label for="new_password">Neues Passwort</label>
+            <input type="password" name="new_password" id="new_password" required minlength="8">
+            <span class="field-hint">Mindestens 8 Zeichen.</span>
         </div>
-        <button type="submit" class="btn btn-primary">Passwort ändern</button>
+        <div class="field">
+            <label for="confirm_password">Neues Passwort bestätigen</label>
+            <input type="password" name="confirm_password" id="confirm_password" required minlength="8">
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Passwort ändern</button>
+        </div>
     </form>
 </div>
 
