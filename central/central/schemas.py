@@ -14,7 +14,15 @@ class AgentRegisterRequest(BaseModel):
 class AgentRegisterResponse(BaseModel):
     agent_id: int
     agent_token: str
+    borg_repo: str = ""
+    borg_passphrase: str = ""
     poll_interval_seconds: int = 30
+
+
+class HeartbeatResponse(BaseModel):
+    ack: bool = True
+    borg_repo: str = ""
+    borg_passphrase: str = ""
 
 
 class ContainerPayload(BaseModel):

@@ -69,6 +69,23 @@ def agent_detail(agent_id: int, request: Request, db: Session = Depends(get_db))
     })
 
 
+@router.post("/agents/{agent_id}/settings")
+def update_agent_settings(
+    agent_id: int,
+    borg_repo: str = Form(""),
+    borg_passphrase: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent not found", status_code=404)
+    agent.borg_repo = borg_repo
+    if borg_passphrase and borg_passphrase != "********":
+        agent.borg_passphrase = borg_passphrase
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}", status_code=303)
+
+
 @router.post("/agents/{agent_id}/backup")
 def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
     job = Job(agent_id=agent_id, job_type="backup")

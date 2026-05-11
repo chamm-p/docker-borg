@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import Agent, Container
-from ..schemas import AgentRegisterRequest, AgentRegisterResponse, HeartbeatRequest
+from ..schemas import AgentRegisterRequest, AgentRegisterResponse, HeartbeatRequest, HeartbeatResponse
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
@@ -47,7 +47,12 @@ def register(req: AgentRegisterRequest, db: Session = Depends(get_db)):
         existing.status = "online"
         existing.last_heartbeat = datetime.utcnow()
         db.commit()
-        return AgentRegisterResponse(agent_id=existing.id, agent_token=agent_token)
+        return AgentRegisterResponse(
+            agent_id=existing.id,
+            agent_token=agent_token,
+            borg_repo=existing.borg_repo or "",
+            borg_passphrase=existing.borg_passphrase or "",
+        )
 
     agent_token = secrets.token_urlsafe(32)
     agent = Agent(
@@ -60,7 +65,12 @@ def register(req: AgentRegisterRequest, db: Session = Depends(get_db)):
     db.add(agent)
     db.commit()
     db.refresh(agent)
-    return AgentRegisterResponse(agent_id=agent.id, agent_token=agent_token)
+    return AgentRegisterResponse(
+        agent_id=agent.id,
+        agent_token=agent_token,
+        borg_repo=agent.borg_repo or "",
+        borg_passphrase=agent.borg_passphrase or "",
+    )
 
 
 @router.post("/heartbeat")
@@ -88,4 +98,7 @@ def heartbeat(
         db.add(container)
 
     db.commit()
-    return {"ack": True}
+    return HeartbeatResponse(
+        borg_repo=agent.borg_repo or "",
+        borg_passphrase=agent.borg_passphrase or "",
+    )

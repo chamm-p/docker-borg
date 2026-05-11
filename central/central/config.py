@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-random-secret"
     database_url: str = "sqlite:///data/docker_borg.db"
     data_dir: Path = Path("data")
+    admin_password: str = "change-me"
     log_level: str = "INFO"
     agent_offline_seconds: int = 120
 

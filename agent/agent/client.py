@@ -39,6 +39,15 @@ class CentralClient:
     def is_registered(self) -> bool:
         return self._token is not None
 
+    def _apply_borg_config(self, data: dict):
+        repo = data.get("borg_repo", "")
+        passphrase = data.get("borg_passphrase", "")
+        if repo:
+            settings.borg_repo = repo
+            logger.info("Borg repo set from central: %s", repo)
+        if passphrase:
+            settings.borg_passphrase = passphrase
+
     def register(self) -> bool:
         hostname = settings.agent_name or socket.gethostname()
         try:
@@ -54,6 +63,7 @@ class CentralClient:
             if resp.status_code == 201:
                 data = resp.json()
                 self._save_token(data["agent_token"])
+                self._apply_borg_config(data)
                 logger.info("Registered with central as '%s'", hostname)
                 return True
             logger.error("Registration failed: %s %s", resp.status_code, resp.text)
@@ -83,7 +93,10 @@ class CentralClient:
                 },
                 headers=self._headers(),
             )
-            return resp.status_code == 200
+            if resp.status_code == 200:
+                self._apply_borg_config(resp.json())
+                return True
+            return False
         except httpx.RequestError as e:
             logger.warning("Heartbeat failed: %s", e)
             return False

@@ -12,6 +12,22 @@
     Letzter Heartbeat: {{ agent.last_heartbeat.strftime('%Y-%m-%d %H:%M:%S') if agent.last_heartbeat else 'nie' }}
 </div>
 
+<h2>Backup-Ziel</h2>
+<form method="post" action="/agents/{{ agent.id }}/settings" class="form-inline">
+    <div class="form-group">
+        <label for="borg_repo">Borg Repo:</label>
+        <input type="text" name="borg_repo" id="borg_repo" value="{{ agent.borg_repo or '' }}" placeholder="ssh://user@server/path" style="width: 20rem">
+    </div>
+    <div class="form-group">
+        <label for="borg_passphrase">Passphrase:</label>
+        <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="Passphrase" style="width: 12rem">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Speichern</button>
+</form>
+{% if not agent.borg_repo %}
+<p class="meta" style="margin-top: 0.5rem;">Backup-Ziel muss konfiguriert werden, bevor Backups laufen.</p>
+{% endif %}
+
 <div class="actions" style="margin: 1rem 0;">
     <form method="post" action="/agents/{{ agent.id }}/backup" style="display:inline">
         <button type="submit" class="btn btn-primary">Backup Now</button>

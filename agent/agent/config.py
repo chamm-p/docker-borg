@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     registration_token: str = ""
     poll_interval: int = 30
 
-    borg_repo: str = "/backups"
+    borg_repo: str = ""
     borg_passphrase: str = ""
 
     docker_socket: str = "/var/run/docker.sock"
