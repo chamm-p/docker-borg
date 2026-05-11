@@ -95,7 +95,7 @@ def agent_detail(
 
 
 def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
-                       local_path, webdav_url, webdav_user, webdav_password, webdav_insecure):
+                       local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl):
     agent.backup_type = backup_type
     if backup_type == "scp":
         agent.scp_host = scp_host
@@ -111,7 +111,7 @@ def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_por
         agent.webdav_user = webdav_user
         if webdav_password and webdav_password != "********":
             agent.webdav_password = webdav_password
-        agent.webdav_verify_ssl = not webdav_insecure
+        agent.webdav_verify_ssl = webdav_verify_ssl
         agent.borg_repo = "/mnt/webdav/borg"
 
 
@@ -127,14 +127,14 @@ def update_target(
     webdav_url: str = Form(""),
     webdav_user: str = Form(""),
     webdav_password: str = Form(""),
-    webdav_insecure: bool = Form(False),
+    webdav_verify_ssl: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
-                       local_path, webdav_url, webdav_user, webdav_password, webdav_insecure)
+                       local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=target", status_code=303)
 
@@ -151,14 +151,14 @@ def check_target(
     webdav_url: str = Form(""),
     webdav_user: str = Form(""),
     webdav_password: str = Form(""),
-    webdav_insecure: bool = Form(False),
+    webdav_verify_ssl: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
-                       local_path, webdav_url, webdav_user, webdav_password, webdav_insecure)
+                       local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
     ok, msg = check_connection(agent)
     record_result(agent, ok, msg)
     db.commit()
