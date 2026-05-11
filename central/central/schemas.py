@@ -45,6 +45,7 @@ class ContainerPayload(BaseModel):
     image: str
     status: str
     has_volumes: bool = False
+    compose_dir_accessible: bool = False
 
 
 class HeartbeatRequest(BaseModel):

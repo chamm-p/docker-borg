@@ -29,6 +29,7 @@ class ContainerInfo:
     image: str
     status: str
     has_volumes: bool = False
+    compose_dir_accessible: bool = False
 
 
 @dataclass

@@ -57,23 +57,52 @@ def _host_path_to_local(host_path: str) -> Path:
     return Path(docker_host_dir) / Path(host_path).name
 
 
-def _collect_root_files(compose_dir_local: Path, volume_dirs: set[str]) -> list[str]:
-    if not compose_dir_local.is_dir():
-        logger.warning("Compose dir not accessible: %s", compose_dir_local)
-        return []
+SKIP_DIRS = {
+    ".git", ".github", ".idea", ".vscode", ".venv", "venv", "node_modules",
+    "__pycache__", "data", "logs", "dist", "build", ".pytest_cache",
+}
 
-    volume_basenames = {Path(d).name for d in volume_dirs}
+
+def _collect_root_files(compose_dir_local: Path, volume_dirs: set[str], max_depth: int = 2) -> list[str]:
+    volume_paths: set[Path] = set()
+    for d in volume_dirs:
+        try:
+            volume_paths.add(Path(d).resolve())
+        except OSError:
+            pass
+
     files: list[str] = []
 
-    for entry in compose_dir_local.iterdir():
-        if entry.is_dir():
-            continue
-        name = entry.name
-        for pattern in settings.root_file_globs:
-            if fnmatch.fnmatch(name, pattern):
-                files.append(name)
-                break
+    def walk(directory: Path, depth: int) -> None:
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            return
+        if resolved in volume_paths:
+            return
+        try:
+            entries = list(directory.iterdir())
+        except (OSError, PermissionError):
+            return
+        for entry in entries:
+            try:
+                if entry.is_symlink():
+                    continue
+                if entry.is_file():
+                    name = entry.name
+                    for pattern in settings.root_file_globs:
+                        if fnmatch.fnmatch(name, pattern):
+                            rel = entry.relative_to(compose_dir_local)
+                            files.append(str(rel))
+                            break
+                elif entry.is_dir() and depth < max_depth:
+                    if entry.name.startswith(".") or entry.name in SKIP_DIRS:
+                        continue
+                    walk(entry, depth + 1)
+            except OSError:
+                continue
 
+    walk(compose_dir_local, 0)
     return sorted(set(files))
 
 
@@ -104,10 +133,17 @@ def discover_containers() -> list[ContainerInfo]:
             continue
 
         root_files: list[str] = []
+        compose_dir_accessible = False
         if compose_dir_host:
             compose_dir_local = _host_path_to_local(compose_dir_host)
             if compose_dir_local.is_dir():
+                compose_dir_accessible = True
                 root_files = _collect_root_files(compose_dir_local, all_volume_dirs)
+                if not root_files:
+                    logger.info(
+                        "Compose dir %s readable but no matching backup files within depth 2",
+                        compose_dir_local,
+                    )
             else:
                 logger.warning(
                     "Compose dir %s mapped to %s but not accessible in agent. "
@@ -129,6 +165,7 @@ def discover_containers() -> list[ContainerInfo]:
             image=images,
             status="running",
             has_volumes=has_volumes,
+            compose_dir_accessible=compose_dir_accessible,
         )
         seen_projects[project] = info
 

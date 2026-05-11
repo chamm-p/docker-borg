@@ -121,6 +121,7 @@ class CentralClient:
                     "image": c.image,
                     "status": c.status,
                     "has_volumes": c.has_volumes,
+                    "compose_dir_accessible": c.compose_dir_accessible,
                 }
                 for c in containers
             ],

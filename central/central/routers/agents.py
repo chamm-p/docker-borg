@@ -114,6 +114,7 @@ def heartbeat(
             row.image = c.image
             row.status = c.status
             row.has_volumes = c.has_volumes
+            row.compose_dir_accessible = c.compose_dir_accessible
         else:
             db.add(Container(
                 agent_id=agent.id,
@@ -125,6 +126,7 @@ def heartbeat(
                 image=c.image,
                 status=c.status,
                 has_volumes=c.has_volumes,
+                compose_dir_accessible=c.compose_dir_accessible,
                 backup_enabled=True,
             ))
 

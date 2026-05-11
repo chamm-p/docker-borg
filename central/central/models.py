@@ -56,6 +56,7 @@ class Container(Base):
     image: Mapped[str] = mapped_column(String(500), default="")
     status: Mapped[str] = mapped_column(String(20), default="running")
     has_volumes: Mapped[bool] = mapped_column(Boolean, default=False)
+    compose_dir_accessible: Mapped[bool] = mapped_column(Boolean, default=False)
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

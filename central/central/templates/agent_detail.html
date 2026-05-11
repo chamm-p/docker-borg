@@ -283,12 +283,12 @@ function revealPassphrase() {
     </div>
     <div class="card-body p-0">
         {% if containers %}
-        {% set unreachable = containers|selectattr('compose_dir')|rejectattr('_files')|list %}
+        {% set unreachable = containers|selectattr('compose_dir')|rejectattr('compose_dir_accessible')|list %}
         {% if unreachable %}
         <div class="alert alert-warning rounded-0 mb-0 border-0 border-bottom">
             <i class="bi bi-exclamation-triangle-fill me-1"></i>
-            <strong>{{ unreachable|length }}</strong> Compose-Verzeichnis{% if unreachable|length > 1 %}se sind{% else %} ist{% endif %} im Agent nicht erreichbar
-            (Spalte „Status"). Setze in der Agent-Compose <code>DBORG_HOST_BASE_DIR</code> auf den Host-Pfad
+            <strong>{{ unreachable|length }}</strong> Compose-Verzeichnis{% if unreachable|length > 1 %}se sind{% else %} ist{% endif %} im Agent-Container nicht zugreifbar.
+            Setze in der Agent-Compose <code>DBORG_HOST_BASE_DIR</code> auf den Host-Pfad
             und mount entsprechend (z.B. <code>/home/user/docker:/host/docker:ro</code> + <code>DBORG_HOST_BASE_DIR=/home/user/docker</code>).
         </div>
         {% endif %}
@@ -324,8 +324,10 @@ function revealPassphrase() {
                                 <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>kein Compose</span>
                                 {% elif c._files %}
                                 <span class="badge text-bg-success" title="{{ c._files|join(', ') }}"><i class="bi bi-check-circle me-1"></i>{{ c._files|length }} Datei{% if c._files|length != 1 %}en{% endif %}</span>
+                                {% elif c.compose_dir_accessible %}
+                                <span class="badge text-bg-warning" title="Verzeichnis lesbar, aber keine docker-compose.yml / .env / Dockerfile gefunden (bis Tiefe 2)"><i class="bi bi-question-circle me-1"></i>keine Backup-Dateien</span>
                                 {% else %}
-                                <span class="badge text-bg-warning" title="Verzeichnis im Agent nicht lesbar"><i class="bi bi-exclamation-triangle me-1"></i>nicht erreichbar</span>
+                                <span class="badge text-bg-danger" title="Agent-Container hat keinen Zugriff auf das Verzeichnis"><i class="bi bi-x-circle me-1"></i>Mount fehlt</span>
                                 {% endif %}
                             </td>
                         </tr>
