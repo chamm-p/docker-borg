@@ -19,63 +19,109 @@ Central Server (Web UI + API + Scheduler)
       Backup Target (SFTP / WebDAV / Lokal)
 ```
 
-## Quick Start
+## Deployment
 
-### 1. Central Server starten
+Fertige Multi-Arch Images (AMD64 + ARM64) werden automatisch via GitHub Actions gebaut und auf GHCR veröffentlicht. Kein `git clone` oder Build nötig.
 
-```bash
-cd central
-cp ../env.example .env
-# DBORG_REGISTRATION_TOKEN und DBORG_SECRET_KEY anpassen
-docker compose up -d
+### 1. Central Server
+
+`deploy/central/docker-compose.yml` herunterladen, Platzhalter anpassen, starten:
+
+```yaml
+services:
+  central:
+    image: ghcr.io/chamm-p/docker-borg-central:latest
+    container_name: dborg-central
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - DBORG_REGISTRATION_TOKEN=<dein-token>
+      - DBORG_ADMIN_PASSWORD=<dein-admin-passwort>
+      - DBORG_SECRET_KEY=<dein-secret>
+      - DBORG_LOG_LEVEL=INFO
+    volumes:
+      - central-data:/app/data
+
+volumes:
+  central-data:
 ```
 
-Web UI: http://localhost:8080
+Web UI: `http://<host>:8080` (Login: `admin` / dein Passwort)
 
-### 2. Agent auf jedem Host starten
+### 2. Agent (pro Host)
 
-```bash
-cd agent
-cp ../env.example .env
-# Anpassen: DBORG_AGENT_NAME, DBORG_CENTRAL_URL, DBORG_REGISTRATION_TOKEN, etc.
-docker compose up -d
+`deploy/agent/docker-compose.yml` herunterladen, Platzhalter anpassen, starten:
+
+```yaml
+services:
+  agent:
+    image: ghcr.io/chamm-p/docker-borg-agent:latest
+    container_name: dborg-agent
+    restart: unless-stopped
+    environment:
+      - DBORG_AGENT_NAME=<hostname>
+      - DBORG_CENTRAL_URL=http://<central-ip>:8080
+      - DBORG_REGISTRATION_TOKEN=<gleiches-token-wie-central>
+      - DBORG_DOCKER_HOST_DIR=/host/docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /pfad/zu/docker:/host/docker:ro
+      - agent-data:/data
+    command: ["daemon"]
+
+volumes:
+  agent-data:
 ```
 
-### 3. Oder beides zusammen (gleicher Host)
+### 3. Tokens generieren
 
 ```bash
-cp .env.example .env
-# Anpassen
-docker compose -f docker-compose.prod.yml up -d
+openssl rand -base64 32   # REGISTRATION_TOKEN (gleich auf Central + Agent)
+openssl rand -base64 16   # ADMIN_PASSWORD
+openssl rand -base64 32   # SECRET_KEY
 ```
 
 ## Konfiguration
 
-Alle Einstellungen via Umgebungsvariablen (Prefix `DBORG_`):
+### Central (Umgebungsvariablen)
 
-### Agent
+| Variable | Beschreibung |
+|---|---|
+| `DBORG_REGISTRATION_TOKEN` | Token für Agent-Registrierung |
+| `DBORG_ADMIN_PASSWORD` | Admin-Passwort für Web UI |
+| `DBORG_SECRET_KEY` | Interner Schlüssel |
+| `DBORG_LOG_LEVEL` | Log-Level (default: `INFO`) |
 
-| Variable | Default | Beschreibung |
-|---|---|---|
-| `DBORG_AGENT_NAME` | hostname | Name des Agents |
-| `DBORG_CENTRAL_URL` | `http://central:8080` | URL des Central Servers |
-| `DBORG_REGISTRATION_TOKEN` | - | Token für die Registrierung |
-| `DBORG_BORG_REPO` | `/backups` | Borg Repository Pfad/URL |
-| `DBORG_BORG_PASSPHRASE` | - | Borg Verschlüsselungspassphrase |
-| `DBORG_DOCKER_HOST_DIR` | `/host/docker` | Gemountetes Docker-Verzeichnis |
-| `DBORG_POLL_INTERVAL` | `30` | Poll-Intervall in Sekunden |
+### Agent (Umgebungsvariablen)
 
-### Central
+| Variable | Beschreibung |
+|---|---|
+| `DBORG_AGENT_NAME` | Name des Agents (in Web UI sichtbar) |
+| `DBORG_CENTRAL_URL` | URL des Central Servers |
+| `DBORG_REGISTRATION_TOKEN` | Token (muss mit Central übereinstimmen) |
 
-| Variable | Default | Beschreibung |
-|---|---|---|
-| `DBORG_REGISTRATION_TOKEN` | - | Token für Agent-Registrierung |
-| `DBORG_SECRET_KEY` | - | Geheimer Schlüssel |
-| `DBORG_LOG_LEVEL` | `INFO` | Log-Level |
+### Backup-Ziel
+
+Wird **zentral in der Web UI** pro Agent konfiguriert (nicht am Agent selbst):
+- **SFTP:** `ssh://user@backup-server/path/to/repo`
+- **Borg Server:** `ssh://borg@server/./repo`
+- **Lokal/Mount:** Pfad zu einem gemounteten Verzeichnis (WebDAV, NFS, etc.)
+
+## Was wird gesichert?
+
+Pro Compose-Projekt werden die Root-Dateien gesichert:
+- `docker-compose*.yml` / `compose*.yml`
+- `.env`, `.env.*`
+- `Dockerfile`, `Dockerfile.*`
+- `.dockerignore`
+- `*.conf`, `*.toml`, `*.ini`
+
+Volume-Daten werden bewusst **nicht** gesichert (diese werden separat über die Container selbst gehandhabt).
 
 ## Agent CLI
 
-Der Agent kann auch standalone (ohne Central) genutzt werden:
+Der Agent kann auch direkt im Container ausgeführt werden:
 
 ```bash
 # Container erkennen
@@ -89,33 +135,4 @@ docker exec dborg-agent python -m agent.main backup --project myapp
 
 # Archive auflisten
 docker exec dborg-agent python -m agent.main list
-```
-
-## Backup Target
-
-Das Target wird pro Agent konfiguriert und ist unabhängig vom Central Server:
-
-- **Lokal:** `/backups` (als Volume gemountet)
-- **SFTP:** `ssh://user@backup-server/path/to/repo`
-- **WebDAV:** Verzeichnis als FUSE mounten, dann lokalen Pfad verwenden
-- **Borg Server:** `ssh://borg@server/./repo`
-
-## Was wird gesichert?
-
-Pro Compose-Projekt werden die Root-Dateien gesichert:
-- `docker-compose*.yml` / `compose*.yml`
-- `.env`, `.env.*`
-- `Dockerfile`, `Dockerfile.*`
-- `.dockerignore`
-- `*.conf`, `*.toml`, `*.ini`
-
-Volume-Daten werden bewusst **nicht** gesichert (diese werden separat über die Container selbst gehandhabt).
-
-## Multi-Arch
-
-Beide Images unterstützen `linux/amd64` und `linux/arm64`:
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t dborg-central ./central
-docker buildx build --platform linux/amd64,linux/arm64 -t dborg-agent ./agent
 ```
