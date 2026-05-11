@@ -42,6 +42,13 @@ nav {
     color: var(--primary);
 }
 
+.nav-version {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.3rem;
+}
+
 .nav-links a {
     color: var(--text-muted);
     text-decoration: none;

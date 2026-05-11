@@ -11,8 +11,11 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Agent, Container, Job, JobLog, Schedule
 
+from ..version import APP_VERSION
+
 router = APIRouter(tags=["ui"])
 templates = Jinja2Templates(directory="central/templates")
+templates.env.globals["app_version"] = APP_VERSION
 
 
 def _agent_status_class(agent: Agent) -> str:

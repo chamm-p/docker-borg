@@ -11,6 +11,7 @@ from .config import settings
 from .database import init_db
 from .routers import agents, jobs, schedules, ui
 from .services.scheduler import scheduler_loop
+from .version import APP_VERSION
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),

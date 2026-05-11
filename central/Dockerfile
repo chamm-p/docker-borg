@@ -4,7 +4,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+ARG BUILD_VERSION=dev
 COPY central/ central/
+RUN echo "${BUILD_VERSION}" > /app/central/VERSION
 
 RUN mkdir -p /app/data
 
