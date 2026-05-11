@@ -64,6 +64,7 @@ class CentralClient:
         settings.webdav_user = backup.get("webdav_user", "")
         if backup.get("webdav_password"):
             settings.webdav_password = backup["webdav_password"]
+        settings.webdav_verify_ssl = bool(backup.get("webdav_verify_ssl", True))
 
     def register(self) -> bool:
         hostname = settings.agent_name or socket.gethostname()

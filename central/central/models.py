@@ -30,6 +30,7 @@ class Agent(Base):
     webdav_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     webdav_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
     webdav_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    webdav_verify_ssl: Mapped[bool] = mapped_column(Boolean, default=True)
 
     last_connection_check: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_connection_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

@@ -106,6 +106,7 @@ def update_target(
     webdav_url: str = Form(""),
     webdav_user: str = Form(""),
     webdav_password: str = Form(""),
+    webdav_verify_ssl: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -126,6 +127,7 @@ def update_target(
         agent.webdav_user = webdav_user
         if webdav_password and webdav_password != "********":
             agent.webdav_password = webdav_password
+        agent.webdav_verify_ssl = webdav_verify_ssl
         agent.borg_repo = "/mnt/webdav/borg"
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=target", status_code=303)

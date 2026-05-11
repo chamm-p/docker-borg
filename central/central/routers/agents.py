@@ -30,6 +30,7 @@ def _backup_config(agent: Agent) -> BackupConfig:
         webdav_url=agent.webdav_url or "",
         webdav_user=agent.webdav_user or "",
         webdav_password=agent.webdav_password or "",
+        webdav_verify_ssl=bool(agent.webdav_verify_ssl),
     )
 
 
@@ -99,20 +100,20 @@ def heartbeat(
     if req.agent_version:
         agent.agent_version = req.agent_version
 
-    existing = {c.container_id: c for c in db.query(Container).filter(Container.agent_id == agent.id).all()}
-    seen_ids: set[str] = set()
+    existing = {c.compose_project: c for c in db.query(Container).filter(Container.agent_id == agent.id).all()}
+    seen: set[str] = set()
 
     for c in req.containers:
-        seen_ids.add(c.container_id)
-        existing_row = existing.get(c.container_id)
-        if existing_row:
-            existing_row.container_name = c.container_name
-            existing_row.compose_project = c.compose_project
-            existing_row.compose_dir = c.compose_dir
-            existing_row.root_files = json.dumps(c.root_files)
-            existing_row.image = c.image
-            existing_row.status = c.status
-            existing_row.has_volumes = c.has_volumes
+        seen.add(c.compose_project)
+        row = existing.get(c.compose_project)
+        if row:
+            row.container_id = c.container_id
+            row.container_name = c.container_name
+            row.compose_dir = c.compose_dir
+            row.root_files = json.dumps(c.root_files)
+            row.image = c.image
+            row.status = c.status
+            row.has_volumes = c.has_volumes
         else:
             db.add(Container(
                 agent_id=agent.id,
@@ -127,8 +128,8 @@ def heartbeat(
                 backup_enabled=True,
             ))
 
-    for cid, row in existing.items():
-        if cid not in seen_ids:
+    for project, row in existing.items():
+        if project not in seen:
             db.delete(row)
 
     db.commit()

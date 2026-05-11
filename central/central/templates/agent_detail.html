@@ -2,250 +2,267 @@
 {% block title %}{{ agent.hostname }} – docker-borg{% endblock %}
 {% block content %}
 
-<div class="page-header">
-    <div>
-        <h1 style="margin-bottom: 4px;">
-            <span class="tl tl-{{ traffic_light }}" style="margin-right: 8px;"></span>
-            {{ agent.hostname }}
-        </h1>
-        <div class="page-header-meta">
-            <span><strong>Status:</strong> {{ agent.status }}</span>
-            <span><strong>Agent:</strong> v{{ agent.agent_version or '?' }}</span>
-            <span><strong>Heartbeat:</strong> {{ agent.last_heartbeat|relative }}</span>
+<div class="card shadow-sm mb-4">
+    <div class="card-body p-4">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div>
+                <h1 class="h3 mb-2 d-flex align-items-center">
+                    <span class="tl tl-{{ traffic_light }} me-3"></span>
+                    {{ agent.hostname }}
+                </h1>
+                <div class="d-flex flex-wrap gap-3 text-muted small">
+                    <span><i class="bi bi-circle-fill text-{{ 'success' if agent.status == 'online' else 'danger' }} me-1" style="font-size:0.6rem;"></i> {{ agent.status }}</span>
+                    <span><i class="bi bi-cpu me-1"></i> Agent v{{ agent.agent_version or '?' }}</span>
+                    <span><i class="bi bi-heart-pulse me-1"></i> Heartbeat {{ agent.last_heartbeat|relative }}</span>
+                </div>
+            </div>
+            <form method="post" action="/agents/{{ agent.id }}/backup">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-play-fill me-1"></i>Backup jetzt starten</button>
+            </form>
         </div>
-    </div>
-    <div class="btn-group">
-        <form method="post" action="/agents/{{ agent.id }}/backup">
-            <button type="submit" class="btn btn-primary">Backup jetzt starten</button>
-        </form>
     </div>
 </div>
 
-<nav class="tabs">
-    <a href="?tab=overview" class="tab {% if tab == 'overview' %}active{% endif %}">Übersicht</a>
-    <a href="?tab=target" class="tab {% if tab == 'target' %}active{% endif %}">Backup-Ziel</a>
-    <a href="?tab=encryption" class="tab {% if tab == 'encryption' %}active{% endif %}">Verschlüsselung</a>
-    <a href="?tab=containers" class="tab {% if tab == 'containers' %}active{% endif %}">Container ({{ containers|length }})</a>
-    <a href="?tab=schedule" class="tab {% if tab == 'schedule' %}active{% endif %}">Zeitplan</a>
-    <a href="?tab=jobs" class="tab {% if tab == 'jobs' %}active{% endif %}">Jobs</a>
-    <a href="?tab=recovery" class="tab {% if tab == 'recovery' %}active{% endif %}">Wiederherstellung</a>
-</nav>
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item"><a class="nav-link {% if tab == 'overview' %}active{% endif %}" href="?tab=overview"><i class="bi bi-grid-1x2 me-1"></i> Übersicht</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'target' %}active{% endif %}" href="?tab=target"><i class="bi bi-cloud-arrow-up me-1"></i> Backup-Ziel</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'encryption' %}active{% endif %}" href="?tab=encryption"><i class="bi bi-shield-lock me-1"></i> Verschlüsselung</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'containers' %}active{% endif %}" href="?tab=containers"><i class="bi bi-box-seam me-1"></i> Container <span class="badge text-bg-secondary ms-1">{{ containers|length }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'schedule' %}active{% endif %}" href="?tab=schedule"><i class="bi bi-calendar3 me-1"></i> Zeitplan</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'jobs' %}active{% endif %}" href="?tab=jobs"><i class="bi bi-list-check me-1"></i> Jobs</a></li>
+    <li class="nav-item"><a class="nav-link {% if tab == 'recovery' %}active{% endif %}" href="?tab=recovery"><i class="bi bi-arrow-counterclockwise me-1"></i> Wiederherstellung</a></li>
+</ul>
 
 {# ───────────── Übersicht ───────────── #}
 {% if tab == 'overview' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Übersicht</h2>
-        <p>Konfigurationsstatus und letzte Aktivität.</p>
-    </div>
-    <div class="field-row">
-        <div>
-            <h3>Backup-Ziel</h3>
-            {% if agent.backup_type == 'scp' %}
-                <p><strong>SCP</strong> – <code>{{ agent.scp_user }}@{{ agent.scp_host }}:{{ agent.scp_port }}/{{ agent.scp_path or '' }}</code></p>
-            {% elif agent.backup_type == 'local' %}
-                <p><strong>Lokaler Mountpoint</strong> – <code>{{ agent.local_path or '(nicht gesetzt)' }}</code></p>
-            {% elif agent.backup_type == 'webdav' %}
-                <p><strong>WebDAV</strong> – <code>{{ agent.webdav_url or '(nicht gesetzt)' }}</code></p>
-            {% else %}
-                <p class="muted">Nicht konfiguriert</p>
-            {% endif %}
-            {% if agent.last_connection_check %}
-                {% if agent.last_connection_ok %}
-                    <p class="text-small"><span class="badge badge-success">Verbindung OK</span> getestet {{ agent.last_connection_check|relative }}</p>
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="text-uppercase text-muted small mb-3"><i class="bi bi-cloud-arrow-up me-1"></i> Backup-Ziel</h6>
+                {% if agent.backup_type == 'scp' %}
+                    <p class="mb-1"><span class="badge text-bg-info">SCP</span></p>
+                    <code class="small">{{ agent.scp_user }}@{{ agent.scp_host }}:{{ agent.scp_port }}/{{ agent.scp_path or '' }}</code>
+                {% elif agent.backup_type == 'local' %}
+                    <p class="mb-1"><span class="badge text-bg-info">Lokal</span></p>
+                    <code class="small">{{ agent.local_path or '(nicht gesetzt)' }}</code>
+                {% elif agent.backup_type == 'webdav' %}
+                    <p class="mb-1"><span class="badge text-bg-info">WebDAV</span></p>
+                    <code class="small">{{ agent.webdav_url or '(nicht gesetzt)' }}</code>
                 {% else %}
-                    <p class="text-small"><span class="badge badge-danger">Fehler</span> {{ agent.last_connection_error }}</p>
+                    <p class="text-muted">Nicht konfiguriert</p>
                 {% endif %}
-            {% endif %}
+                {% if agent.last_connection_check %}
+                    <hr>
+                    {% if agent.last_connection_ok %}
+                    <p class="mb-0 small"><i class="bi bi-check-circle-fill text-success me-1"></i> Verbindung OK, getestet {{ agent.last_connection_check|relative }}</p>
+                    {% else %}
+                    <p class="mb-0 small text-danger"><i class="bi bi-x-circle-fill me-1"></i> {{ agent.last_connection_error }}</p>
+                    {% endif %}
+                {% endif %}
+            </div>
         </div>
-        <div>
-            <h3>Verschlüsselung</h3>
-            {% if agent.borg_passphrase %}
-                <p><span class="badge badge-success">Passphrase gesetzt</span></p>
-            {% else %}
-                <p><span class="badge badge-warning">Keine Passphrase</span></p>
-            {% endif %}
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="text-uppercase text-muted small mb-3"><i class="bi bi-shield-lock me-1"></i> Verschlüsselung</h6>
+                {% if agent.borg_passphrase %}
+                    <p class="mb-0"><i class="bi bi-check-circle-fill text-success me-1"></i> Passphrase gesetzt</p>
+                {% else %}
+                    <p class="mb-0 text-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> Keine Passphrase</p>
+                {% endif %}
+            </div>
         </div>
-        <div>
-            <h3>Aktive Zeitpläne</h3>
-            {% if schedules %}
-                <ul style="margin: 0; padding-left: 1.2rem;">
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="text-uppercase text-muted small mb-3"><i class="bi bi-calendar3 me-1"></i> Zeitpläne</h6>
+                {% if schedules %}
+                <ul class="list-unstyled mb-0 small">
                 {% for s in schedules %}
-                <li>{{ s|human_schedule }} {% if not s.enabled %}<span class="badge">pausiert</span>{% endif %}</li>
+                <li class="mb-1">
+                    <i class="bi bi-{{ 'check-circle-fill text-success' if s.enabled else 'pause-circle text-muted' }} me-1"></i>
+                    {{ s|human_schedule }}
+                </li>
                 {% endfor %}
                 </ul>
-            {% else %}
-                <p class="muted">Kein Zeitplan konfiguriert</p>
-            {% endif %}
+                {% else %}
+                <p class="text-muted mb-0">Kein Zeitplan konfiguriert</p>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>
 
-<div class="panel">
-    <div class="panel-head">
-        <h2>Letzte Jobs</h2>
-    </div>
+<div class="card mt-4">
+    <div class="card-header"><h5 class="mb-0">Letzte Jobs</h5></div>
     {% if jobs %}
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr><th>ID</th><th>Typ</th><th>Status</th><th>Erstellt</th><th>Dauer</th><th></th></tr>
-            </thead>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>ID</th><th>Typ</th><th>Status</th><th>Erstellt</th><th>Dauer</th><th></th></tr></thead>
             <tbody>
                 {% for j in jobs[:5] %}
                 <tr>
-                    <td>{{ j.id }}</td>
-                    <td>{{ j.job_type }}</td>
-                    <td><span class="badge badge-{{ j.status }}">{{ j.status }}</span></td>
-                    <td>{{ j.created_at|localtime }}</td>
-                    <td>{% if j.started_at and j.completed_at %}{{ (j.completed_at - j.started_at).total_seconds()|round(1) }}s{% else %}—{% endif %}</td>
-                    <td><a href="/jobs/{{ j.id }}">Details</a></td>
+                    <td>#{{ j.id }}</td>
+                    <td><i class="bi bi-{{ 'save' if j.job_type == 'backup' else 'arrow-counterclockwise' if j.job_type == 'restore' else 'scissors' }} me-1"></i>{{ j.job_type }}</td>
+                    <td><span class="badge text-bg-{{ 'success' if j.status == 'success' else 'danger' if j.status == 'failed' else 'warning' if j.status == 'pending' else 'info' }}">{{ j.status }}</span></td>
+                    <td class="text-muted">{{ j.created_at|localtime }}</td>
+                    <td class="text-muted">{% if j.started_at and j.completed_at %}{{ (j.completed_at - j.started_at).total_seconds()|round(1) }}s{% else %}—{% endif %}</td>
+                    <td><a href="/jobs/{{ j.id }}" class="btn btn-sm btn-outline-secondary">Details</a></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     {% else %}
-    <p class="muted">Noch keine Jobs ausgeführt.</p>
+    <div class="card-body text-muted">Noch keine Jobs ausgeführt.</div>
     {% endif %}
 </div>
 
-<div class="panel">
-    <div class="panel-head"><h2>Agent entfernen</h2></div>
-    <p class="muted">Entfernt den Agent aus der Zentrale. Der Agent registriert sich beim nächsten Heartbeat automatisch neu, falls er noch läuft.</p>
-    <form method="post" action="/agents/{{ agent.id }}/delete" onsubmit="return confirm('Agent „{{ agent.hostname }}“ wirklich entfernen?')">
-        <div class="form-actions">
-            <button type="submit" class="btn btn-danger">Agent entfernen</button>
-        </div>
-    </form>
+<div class="card mt-4 border-danger">
+    <div class="card-header bg-danger-subtle"><h5 class="mb-0 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Agent entfernen</h5></div>
+    <div class="card-body">
+        <p class="text-muted small">Entfernt den Agent aus der Zentrale. Der Agent registriert sich beim nächsten Heartbeat automatisch neu, falls er noch läuft.</p>
+        <form method="post" action="/agents/{{ agent.id }}/delete" onsubmit="return confirm('Agent „{{ agent.hostname }}“ wirklich entfernen?')">
+            <button type="submit" class="btn btn-outline-danger">Agent entfernen</button>
+        </form>
+    </div>
 </div>
 
 {# ───────────── Backup-Ziel ───────────── #}
 {% elif tab == 'target' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Backup-Ziel</h2>
-        <p>Wohin sollen die Backups dieses Agents geschrieben werden?</p>
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-cloud-arrow-up me-2"></i>Backup-Ziel</h5>
+        <p class="text-muted small mb-0">Wohin sollen die Backups dieses Agents geschrieben werden?</p>
     </div>
-
-    {% if agent.last_connection_check %}
-        {% if agent.last_connection_ok %}
-        <div class="banner banner-success">✓ Verbindung erfolgreich getestet ({{ agent.last_connection_check|localtime }})</div>
-        {% else %}
-        <div class="banner banner-error">✗ {{ agent.last_connection_error }} ({{ agent.last_connection_check|localtime }})</div>
+    <div class="card-body">
+        {% if agent.last_connection_check %}
+            {% if agent.last_connection_ok %}
+            <div class="alert alert-success py-2 mb-4"><i class="bi bi-check-circle-fill me-1"></i> Verbindung erfolgreich getestet ({{ agent.last_connection_check|localtime }})</div>
+            {% else %}
+            <div class="alert alert-danger py-2 mb-4"><i class="bi bi-x-circle-fill me-1"></i> {{ agent.last_connection_error }} <span class="text-muted small">({{ agent.last_connection_check|localtime }})</span></div>
+            {% endif %}
         {% endif %}
-    {% endif %}
 
-    <form method="post" action="/agents/{{ agent.id }}/target">
-        <div class="field">
-            <label for="backup_type">Backup-Typ</label>
-            <select name="backup_type" id="backup_type" onchange="toggleTargetType()">
-                <option value="scp" {% if agent.backup_type == 'scp' %}selected{% endif %}>SCP / SSH</option>
-                <option value="local" {% if agent.backup_type == 'local' %}selected{% endif %}>Lokaler Mountpoint</option>
-                <option value="webdav" {% if agent.backup_type == 'webdav' %}selected{% endif %}>WebDAV</option>
-            </select>
-        </div>
+        <form method="post" action="/agents/{{ agent.id }}/target">
+            <div class="mb-4" style="max-width: 320px;">
+                <label for="backup_type" class="form-label">Backup-Typ</label>
+                <select name="backup_type" id="backup_type" class="form-select" onchange="toggleTargetType()">
+                    <option value="scp" {% if agent.backup_type == 'scp' %}selected{% endif %}>SCP / SSH</option>
+                    <option value="local" {% if agent.backup_type == 'local' %}selected{% endif %}>Lokaler Mountpoint</option>
+                    <option value="webdav" {% if agent.backup_type == 'webdav' %}selected{% endif %}>WebDAV</option>
+                </select>
+            </div>
 
-        <div id="section-scp" class="target-section" style="display: {{ 'block' if agent.backup_type == 'scp' else 'none' }}">
-            <h3>SCP / SSH</h3>
-            <div class="field-row">
-                <div class="field">
-                    <label for="scp_host">Host</label>
-                    <input type="text" name="scp_host" id="scp_host" value="{{ agent.scp_host or '' }}" placeholder="backup.example.com">
+            <div id="section-scp" class="target-section" style="display: {{ 'block' if agent.backup_type == 'scp' else 'none' }}">
+                <hr>
+                <h6 class="text-uppercase text-muted small mb-3">SSH-Verbindung</h6>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="scp_host" class="form-label">Host</label>
+                        <input type="text" name="scp_host" id="scp_host" class="form-control" value="{{ agent.scp_host or '' }}" placeholder="backup.example.com">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="scp_user" class="form-label">Benutzer</label>
+                        <input type="text" name="scp_user" id="scp_user" class="form-control" value="{{ agent.scp_user or '' }}" placeholder="borg">
+                    </div>
+                    <div class="col-md-2">
+                        <label for="scp_port" class="form-label">Port</label>
+                        <input type="number" name="scp_port" id="scp_port" class="form-control" value="{{ agent.scp_port or 22 }}" min="1" max="65535">
+                    </div>
                 </div>
-                <div class="field">
-                    <label for="scp_user">Benutzer</label>
-                    <input type="text" name="scp_user" id="scp_user" value="{{ agent.scp_user or '' }}" placeholder="borg">
-                </div>
-                <div class="field">
-                    <label for="scp_port">Port</label>
-                    <input type="number" name="scp_port" id="scp_port" value="{{ agent.scp_port or 22 }}" min="1" max="65535">
-                </div>
-            </div>
-            <div class="field">
-                <label for="scp_path">Pfad auf Remote-Host</label>
-                <input type="text" name="scp_path" id="scp_path" value="{{ agent.scp_path or '' }}" placeholder="/backups/{{ agent.hostname }}">
-                <span class="field-hint">Borg-Repository wird unter diesem Pfad angelegt. SSH-Key muss auf Remote-Host autorisiert sein.</span>
-            </div>
-        </div>
-
-        <div id="section-local" class="target-section" style="display: {{ 'block' if agent.backup_type == 'local' else 'none' }}">
-            <h3>Lokaler Mountpoint</h3>
-            <div class="field">
-                <label for="local_path">Pfad im Agent-Container</label>
-                <input type="text" name="local_path" id="local_path" value="{{ agent.local_path or '' }}" placeholder="/mnt/backup">
-                <span class="field-hint">Volume muss in den Agent-Container gemountet sein (Bind-Mount oder Docker-Volume).</span>
-            </div>
-        </div>
-
-        <div id="section-webdav" class="target-section" style="display: {{ 'block' if agent.backup_type == 'webdav' else 'none' }}">
-            <h3>WebDAV</h3>
-            <div class="field">
-                <label for="webdav_url">URL</label>
-                <input type="text" name="webdav_url" id="webdav_url" value="{{ agent.webdav_url or '' }}" placeholder="https://cloud.example.com/remote.php/dav/files/user/backup">
-            </div>
-            <div class="field-row">
-                <div class="field">
-                    <label for="webdav_user">Benutzer</label>
-                    <input type="text" name="webdav_user" id="webdav_user" value="{{ agent.webdav_user or '' }}">
-                </div>
-                <div class="field">
-                    <label for="webdav_password">Passwort</label>
-                    <input type="password" name="webdav_password" id="webdav_password" value="{{ '********' if agent.webdav_password else '' }}" placeholder="••••••••">
+                <div class="mb-2">
+                    <label for="scp_path" class="form-label">Pfad auf Remote-Host</label>
+                    <input type="text" name="scp_path" id="scp_path" class="form-control" value="{{ agent.scp_path or '' }}" placeholder="/backups/{{ agent.hostname }}">
+                    <div class="form-text">Borg-Repository wird unter diesem Pfad angelegt. SSH-Key muss auf Remote-Host autorisiert sein.</div>
                 </div>
             </div>
-            <p class="field-hint">Repository wird automatisch unter <code>/mnt/webdav/borg</code> abgelegt.</p>
-        </div>
 
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Speichern</button>
-            <button type="submit" class="btn btn-secondary" formaction="/agents/{{ agent.id }}/target/check" formnovalidate>Verbindung testen</button>
-        </div>
-    </form>
+            <div id="section-local" class="target-section" style="display: {{ 'block' if agent.backup_type == 'local' else 'none' }}">
+                <hr>
+                <h6 class="text-uppercase text-muted small mb-3">Lokaler Mountpoint</h6>
+                <div class="mb-2">
+                    <label for="local_path" class="form-label">Pfad im Agent-Container</label>
+                    <input type="text" name="local_path" id="local_path" class="form-control" value="{{ agent.local_path or '' }}" placeholder="/mnt/backup">
+                    <div class="form-text">Volume muss in den Agent-Container gemountet sein (Bind-Mount oder Docker-Volume).</div>
+                </div>
+            </div>
+
+            <div id="section-webdav" class="target-section" style="display: {{ 'block' if agent.backup_type == 'webdav' else 'none' }}">
+                <hr>
+                <h6 class="text-uppercase text-muted small mb-3">WebDAV-Verbindung</h6>
+                <div class="mb-3">
+                    <label for="webdav_url" class="form-label">URL</label>
+                    <input type="text" name="webdav_url" id="webdav_url" class="form-control" value="{{ agent.webdav_url or '' }}" placeholder="https://cloud.example.com/remote.php/dav/files/user/backup">
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="webdav_user" class="form-label">Benutzer</label>
+                        <input type="text" name="webdav_user" id="webdav_user" class="form-control" value="{{ agent.webdav_user or '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="webdav_password" class="form-label">Passwort</label>
+                        <input type="password" name="webdav_password" id="webdav_password" class="form-control" value="{{ '********' if agent.webdav_password else '' }}" placeholder="••••••••">
+                    </div>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" name="webdav_verify_ssl" id="webdav_verify_ssl" value="true" {% if agent.webdav_verify_ssl or agent.webdav_verify_ssl is none %}checked{% endif %}>
+                    <label class="form-check-label" for="webdav_verify_ssl">SSL-Zertifikat prüfen</label>
+                    <div class="form-text">Deaktivieren bei selbst-signierten oder ungültigen Zertifikaten. Der Agent vertraut dann dem aktuellen Server-Zertifikat.</div>
+                </div>
+                <p class="text-muted small mb-0">Repository wird automatisch unter <code>/mnt/webdav/borg</code> abgelegt.</p>
+            </div>
+
+            <hr class="my-4">
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+                <button type="submit" class="btn btn-outline-secondary" formaction="/agents/{{ agent.id }}/target/check" formnovalidate><i class="bi bi-wifi me-1"></i>Verbindung testen</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script>
 function toggleTargetType() {
     var t = document.getElementById('backup_type').value;
-    document.querySelectorAll('.target-section').forEach(function(el) {
-        el.style.display = 'none';
-    });
+    document.querySelectorAll('.target-section').forEach(function(el) { el.style.display = 'none'; });
     document.getElementById('section-' + t).style.display = 'block';
 }
 </script>
 
 {# ───────────── Verschlüsselung ───────────── #}
 {% elif tab == 'encryption' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Borg-Verschlüsselung</h2>
-        <p>Die Passphrase verschlüsselt das gesamte Borg-Repository. Bei Verlust sind alle Backups unwiederbringlich verloren.</p>
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-shield-lock me-2"></i>Borg-Verschlüsselung</h5>
+        <p class="text-muted small mb-0">Die Passphrase verschlüsselt das gesamte Borg-Repository. Bei Verlust sind alle Backups unwiederbringlich verloren.</p>
     </div>
+    <div class="card-body">
+        <form method="post" action="/agents/{{ agent.id }}/encryption">
+            <div class="mb-3" style="max-width: 480px;">
+                <label for="borg_passphrase" class="form-label">Passphrase</label>
+                <input type="password" name="borg_passphrase" id="borg_passphrase" class="form-control" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="leer lassen für automatisch generierte Passphrase">
+                <div class="form-text">Mindestens 16 Zeichen empfohlen. Bei leerem Feld wird beim Speichern eine 32-Zeichen-Passphrase automatisch generiert.</div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+        </form>
 
-    <form method="post" action="/agents/{{ agent.id }}/encryption">
-        <div class="field">
-            <label for="borg_passphrase">Passphrase</label>
-            <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="leer lassen für automatisch generierte Passphrase">
-            <span class="field-hint">Mindestens 16 Zeichen empfohlen. Bei leerem Feld wird beim Speichern eine 32-Zeichen-Passphrase automatisch generiert.</span>
+        {% if agent.borg_passphrase %}
+        <hr class="my-4">
+        <h6 class="text-uppercase text-muted small mb-2">Passphrase exportieren</h6>
+        <p class="text-muted small">Bewahre die Passphrase ausserhalb dieser Zentrale auf (Passwort-Manager, ausgedruckt im Safe).</p>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-secondary" onclick="revealPassphrase()"><i class="bi bi-eye me-1"></i>Anzeigen</button>
+            <a href="/agents/{{ agent.id }}/passphrase/download" class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i>Als Datei herunterladen</a>
         </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Speichern</button>
+        <div id="passphrase-reveal" class="mt-3" style="display:none;">
+            <div class="passphrase-reveal"><span id="passphrase-value"></span></div>
         </div>
-    </form>
-
-    {% if agent.borg_passphrase %}
-    <h3>Passphrase exportieren</h3>
-    <p class="muted">Bewahre die Passphrase ausserhalb dieser Zentrale auf (Passwort-Manager, ausgedruckt im Safe).</p>
-    <div class="btn-group">
-        <button type="button" class="btn btn-secondary" onclick="revealPassphrase()">Anzeigen</button>
-        <a href="/agents/{{ agent.id }}/passphrase/download" class="btn btn-secondary">Als Datei herunterladen</a>
+        {% endif %}
     </div>
-    <div id="passphrase-reveal" style="display:none; margin-top: var(--space-4);">
-        <div class="log-box mono" style="padding: var(--space-4); user-select: all;">
-            <span id="passphrase-value"></span>
-        </div>
-    </div>
-    {% endif %}
 </div>
 
 <script>
@@ -259,94 +276,83 @@ function revealPassphrase() {
 
 {# ───────────── Container ───────────── #}
 {% elif tab == 'containers' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Container</h2>
-        <p>Wähle, welche Container im Backup berücksichtigt werden sollen.</p>
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-box-seam me-2"></i>Container</h5>
+        <p class="text-muted small mb-0">Wähle, welche Compose-Projekte im Backup berücksichtigt werden sollen.</p>
     </div>
-
-    {% if containers %}
-    <form method="post" action="/agents/{{ agent.id }}/containers" class="wide">
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 60px;">Backup</th>
-                        <th>Compose-Projekt</th>
-                        <th>Container</th>
-                        <th>Verzeichnis</th>
-                        <th>Root-Dateien</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for c in containers %}
-                    <tr>
-                        <td>
-                            {% if c._sicherbar %}
-                            <input type="checkbox" name="enabled" value="{{ c.id }}" {% if c.backup_enabled %}checked{% endif %}>
-                            {% else %}
-                            <span class="muted" title="Kein Compose-Projekt → nicht sicherbar">—</span>
-                            {% endif %}
-                        </td>
-                        <td><strong>{{ c.compose_project }}</strong></td>
-                        <td class="text-small muted">{{ c.container_name }}</td>
-                        <td>{% if c.compose_dir %}<code class="text-tiny">{{ c.compose_dir }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
-                        <td>
-                            {% if c._files %}
-                            <span class="text-tiny">
-                                {% for f in c._files %}<code>{{ f }}</code>{% if not loop.last %} {% endif %}{% endfor %}
-                            </span>
-                            {% else %}
-                            <span class="muted">—</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Auswahl speichern</button>
-        </div>
-    </form>
-    {% else %}
-    <p class="muted">Noch keine Container vom Agent gemeldet.</p>
-    {% endif %}
+    <div class="card-body p-0">
+        {% if containers %}
+        <form method="post" action="/agents/{{ agent.id }}/containers">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 80px;">Backup</th>
+                            <th>Compose-Projekt</th>
+                            <th>Container</th>
+                            <th>Verzeichnis</th>
+                            <th>Root-Dateien</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in containers %}
+                        <tr>
+                            <td>
+                                {% if c._sicherbar %}
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="enabled" value="{{ c.id }}" {% if c.backup_enabled %}checked{% endif %}>
+                                </div>
+                                {% else %}
+                                <span class="text-muted" title="Kein Compose-Projekt → nicht sicherbar">—</span>
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ c.compose_project }}</strong></td>
+                            <td class="text-muted small">{{ c.container_name }}</td>
+                            <td>{% if c.compose_dir %}<code class="small">{{ c.compose_dir }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td>
+                                {% if c._files %}
+                                {% for f in c._files %}<code class="small me-1">{{ f }}</code>{% endfor %}
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Auswahl speichern</button>
+            </div>
+        </form>
+        {% else %}
+        <div class="card-body text-muted">Noch keine Container vom Agent gemeldet.</div>
+        {% endif %}
+    </div>
 </div>
 
 {# ───────────── Zeitplan ───────────── #}
 {% elif tab == 'schedule' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Zeitplan</h2>
-        <p>Wann sollen Backups automatisch ausgeführt werden?</p>
-    </div>
-
-    {% if schedules %}
-    <h3>Aktive Zeitpläne</h3>
-    <div class="table-wrap" style="margin-bottom: var(--space-5);">
-        <table>
-            <thead>
-                <tr><th>Name</th><th>Zeitplan</th><th>Status</th><th>Aufbewahrung</th><th></th></tr>
-            </thead>
+{% if schedules %}
+<div class="card mb-4">
+    <div class="card-header"><h5 class="mb-0">Aktive Zeitpläne</h5></div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>Name</th><th>Zeitplan</th><th>Status</th><th>Aufbewahrung</th><th></th></tr></thead>
             <tbody>
                 {% for s in schedules %}
                 <tr>
                     <td><strong>{{ s.name }}</strong></td>
                     <td>{{ s|human_schedule }}</td>
                     <td>
-                        {% if s.enabled %}
-                        <span class="badge badge-success">aktiv</span>
-                        {% else %}
-                        <span class="badge">pausiert</span>
-                        {% endif %}
+                        {% if s.enabled %}<span class="badge text-bg-success">aktiv</span>
+                        {% else %}<span class="badge text-bg-secondary">pausiert</span>{% endif %}
                     </td>
-                    <td class="text-small muted">
-                        {% if s.prune_after %}{{ s.keep_daily }}t / {{ s.keep_weekly }}w / {{ s.keep_monthly }}m{% else %}keine{% endif %}
-                    </td>
+                    <td class="text-muted small">{% if s.prune_after %}{{ s.keep_daily }}t / {{ s.keep_weekly }}w / {{ s.keep_monthly }}m{% else %}keine{% endif %}</td>
                     <td>
-                        <form method="post" action="/agents/{{ agent.id }}/schedule/{{ s.id }}/delete" style="display:inline" onsubmit="return confirm('Zeitplan löschen?')">
-                            <button type="submit" class="btn btn-danger btn-sm">Löschen</button>
+                        <form method="post" action="/agents/{{ agent.id }}/schedule/{{ s.id }}/delete" onsubmit="return confirm('Zeitplan löschen?')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                         </form>
                     </td>
                 </tr>
@@ -354,148 +360,143 @@ function revealPassphrase() {
             </tbody>
         </table>
     </div>
-    {% endif %}
+</div>
+{% endif %}
 
-    <h3>Neuen Zeitplan anlegen</h3>
-    <form method="post" action="/agents/{{ agent.id }}/schedule">
-        <div class="field-row">
-            <div class="field">
-                <label for="name">Name</label>
-                <input type="text" name="name" id="name" value="Backup" required>
-            </div>
-            <div class="field">
-                <label for="schedule_kind">Häufigkeit</label>
-                <select name="schedule_kind" id="schedule_kind" onchange="toggleScheduleFields()">
-                    <option value="hourly">Stündlich</option>
-                    <option value="daily" selected>Täglich</option>
-                    <option value="weekly">Wöchentlich</option>
-                    <option value="monthly">Monatlich</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="field-row">
-            <div class="field">
-                <label for="hour">Uhrzeit</label>
-                <div class="time-picker">
-                    <select name="hour" id="hour">
-                        {% for h in range(24) %}<option value="{{ h }}" {% if h == 3 %}selected{% endif %}>{{ '%02d'|format(h) }}</option>{% endfor %}
-                    </select>
-                    <span class="time-sep">:</span>
-                    <select name="minute">
-                        {% for m in [0, 15, 30, 45] %}<option value="{{ m }}">{{ '%02d'|format(m) }}</option>{% endfor %}
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-calendar-plus me-2"></i>Neuen Zeitplan anlegen</h5>
+        <p class="text-muted small mb-0">Wann sollen Backups automatisch ausgeführt werden?</p>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/agents/{{ agent.id }}/schedule">
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label for="name" class="form-label">Name</label>
+                    <input type="text" name="name" id="name" class="form-control" value="Backup" required>
+                </div>
+                <div class="col-md-6">
+                    <label for="schedule_kind" class="form-label">Häufigkeit</label>
+                    <select name="schedule_kind" id="schedule_kind" class="form-select" onchange="toggleScheduleFields()">
+                        <option value="hourly">Stündlich</option>
+                        <option value="daily" selected>Täglich</option>
+                        <option value="weekly">Wöchentlich</option>
+                        <option value="monthly">Monatlich</option>
                     </select>
                 </div>
             </div>
-            <div class="field" id="field-weekday" style="display: none;">
-                <label for="weekday">Wochentag</label>
-                <select name="weekday" id="weekday">
-                    <option value="0">Montag</option>
-                    <option value="1">Dienstag</option>
-                    <option value="2">Mittwoch</option>
-                    <option value="3">Donnerstag</option>
-                    <option value="4">Freitag</option>
-                    <option value="5">Samstag</option>
-                    <option value="6">Sonntag</option>
-                </select>
-            </div>
-            <div class="field" id="field-day_of_month" style="display: none;">
-                <label for="day_of_month">Tag im Monat</label>
-                <input type="number" name="day_of_month" id="day_of_month" min="1" max="28" value="1">
-            </div>
-        </div>
 
-        <h3>Aufbewahrung</h3>
-        <div class="field">
-            <label class="checkbox-field">
-                <input type="checkbox" name="prune_after" checked> Alte Archive nach Backup ausdünnen (prune)
-            </label>
-        </div>
-        <div class="field-row">
-            <div class="field">
-                <label for="keep_daily">Tägliche behalten</label>
-                <input type="number" name="keep_daily" id="keep_daily" min="0" value="7">
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="form-label">Uhrzeit</label>
+                    <div class="input-group" style="max-width: 200px;">
+                        <select name="hour" id="hour" class="form-select">
+                            {% for h in range(24) %}<option value="{{ h }}" {% if h == 3 %}selected{% endif %}>{{ '%02d'|format(h) }}</option>{% endfor %}
+                        </select>
+                        <span class="input-group-text">:</span>
+                        <select name="minute" class="form-select">
+                            {% for m in [0, 15, 30, 45] %}<option value="{{ m }}">{{ '%02d'|format(m) }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6" id="field-weekday" style="display: none;">
+                    <label for="weekday" class="form-label">Wochentag</label>
+                    <select name="weekday" id="weekday" class="form-select">
+                        <option value="0">Montag</option><option value="1">Dienstag</option><option value="2">Mittwoch</option>
+                        <option value="3">Donnerstag</option><option value="4">Freitag</option>
+                        <option value="5">Samstag</option><option value="6">Sonntag</option>
+                    </select>
+                </div>
+                <div class="col-md-6" id="field-day_of_month" style="display: none;">
+                    <label for="day_of_month" class="form-label">Tag im Monat</label>
+                    <input type="number" name="day_of_month" id="day_of_month" class="form-control" min="1" max="28" value="1">
+                </div>
             </div>
-            <div class="field">
-                <label for="keep_weekly">Wöchentliche behalten</label>
-                <input type="number" name="keep_weekly" id="keep_weekly" min="0" value="4">
-            </div>
-            <div class="field">
-                <label for="keep_monthly">Monatliche behalten</label>
-                <input type="number" name="keep_monthly" id="keep_monthly" min="0" value="6">
-            </div>
-        </div>
 
-        <div class="field">
-            <label class="checkbox-field">
-                <input type="checkbox" name="enabled" checked> Zeitplan sofort aktivieren
-            </label>
-        </div>
+            <h6 class="text-uppercase text-muted small mb-3 mt-4">Aufbewahrung</h6>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" name="prune_after" id="prune_after" checked>
+                <label class="form-check-label" for="prune_after">Alte Archive nach Backup ausdünnen (prune)</label>
+            </div>
+            <div class="row g-3 mb-3" style="max-width: 600px;">
+                <div class="col-md-4">
+                    <label for="keep_daily" class="form-label">Tägliche</label>
+                    <input type="number" name="keep_daily" id="keep_daily" class="form-control" min="0" value="7">
+                </div>
+                <div class="col-md-4">
+                    <label for="keep_weekly" class="form-label">Wöchentliche</label>
+                    <input type="number" name="keep_weekly" id="keep_weekly" class="form-control" min="0" value="4">
+                </div>
+                <div class="col-md-4">
+                    <label for="keep_monthly" class="form-label">Monatliche</label>
+                    <input type="number" name="keep_monthly" id="keep_monthly" class="form-control" min="0" value="6">
+                </div>
+            </div>
 
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Zeitplan anlegen</button>
-        </div>
-    </form>
+            <div class="form-check form-switch mb-4">
+                <input class="form-check-input" type="checkbox" name="enabled" id="enabled" checked>
+                <label class="form-check-label" for="enabled">Zeitplan sofort aktivieren</label>
+            </div>
+
+            <hr>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Zeitplan anlegen</button>
+        </form>
+    </div>
 </div>
 
 <script>
 function toggleScheduleFields() {
     var k = document.getElementById('schedule_kind').value;
-    document.getElementById('field-weekday').style.display = k === 'weekly' ? 'flex' : 'none';
-    document.getElementById('field-day_of_month').style.display = k === 'monthly' ? 'flex' : 'none';
+    document.getElementById('field-weekday').style.display = k === 'weekly' ? 'block' : 'none';
+    document.getElementById('field-day_of_month').style.display = k === 'monthly' ? 'block' : 'none';
 }
 </script>
 
 {# ───────────── Jobs ───────────── #}
 {% elif tab == 'jobs' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Jobs</h2>
-        <p>Backup-, Restore- und Wartungsläufe.</p>
-    </div>
+<div class="card">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Jobs</h5></div>
     {% if jobs %}
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr><th>ID</th><th>Typ</th><th>Status</th><th>Erstellt</th><th>Abgeschlossen</th><th>Dauer</th><th></th></tr>
-            </thead>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>ID</th><th>Typ</th><th>Status</th><th>Erstellt</th><th>Abgeschlossen</th><th>Dauer</th><th></th></tr></thead>
             <tbody>
                 {% for j in jobs %}
                 <tr>
-                    <td>{{ j.id }}</td>
+                    <td>#{{ j.id }}</td>
                     <td>{{ j.job_type }}</td>
-                    <td><span class="badge badge-{{ j.status }}">{{ j.status }}</span></td>
-                    <td>{{ j.created_at|localtime }}</td>
-                    <td>{{ j.completed_at|localtime if j.completed_at else '—' }}</td>
-                    <td>{% if j.started_at and j.completed_at %}{{ (j.completed_at - j.started_at).total_seconds()|round(1) }}s{% else %}—{% endif %}</td>
-                    <td><a href="/jobs/{{ j.id }}">Logs</a></td>
+                    <td><span class="badge text-bg-{{ 'success' if j.status == 'success' else 'danger' if j.status == 'failed' else 'warning' if j.status == 'pending' else 'info' }}">{{ j.status }}</span></td>
+                    <td class="text-muted small">{{ j.created_at|localtime }}</td>
+                    <td class="text-muted small">{{ j.completed_at|localtime if j.completed_at else '—' }}</td>
+                    <td class="text-muted small">{% if j.started_at and j.completed_at %}{{ (j.completed_at - j.started_at).total_seconds()|round(1) }}s{% else %}—{% endif %}</td>
+                    <td><a href="/jobs/{{ j.id }}" class="btn btn-sm btn-outline-secondary">Logs</a></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     {% else %}
-    <p class="muted">Noch keine Jobs.</p>
+    <div class="card-body text-muted">Noch keine Jobs.</div>
     {% endif %}
 </div>
 
 {# ───────────── Recovery ───────────── #}
 {% elif tab == 'recovery' %}
-<div class="panel">
-    <div class="panel-head">
-        <h2>Wiederherstellung</h2>
-        <p>Stelle einzelne Archive in <code>/tmp/restore</code> auf dem Agent wieder her.</p>
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-arrow-counterclockwise me-2"></i>Wiederherstellung</h5>
+        <p class="text-muted small mb-0">Stelle einzelne Archive in <code>/tmp/restore</code> auf dem Agent wieder her.</p>
     </div>
-    <form method="post" action="/agents/{{ agent.id }}/restore">
-        <div class="field">
-            <label for="archive">Archiv-Name</label>
-            <input type="text" name="archive" id="archive" placeholder="{{ agent.hostname }}-projekt-20260510T030000" required>
-            <span class="field-hint">Format: <code>{{ agent.hostname }}-&lt;projekt&gt;-&lt;timestamp&gt;</code></span>
-        </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-warning">Wiederherstellen</button>
-        </div>
-    </form>
+    <div class="card-body">
+        <form method="post" action="/agents/{{ agent.id }}/restore">
+            <div class="mb-3" style="max-width: 600px;">
+                <label for="archive" class="form-label">Archiv-Name</label>
+                <input type="text" name="archive" id="archive" class="form-control" placeholder="{{ agent.hostname }}-projekt-20260510T030000" required>
+                <div class="form-text">Format: <code>{{ agent.hostname }}-&lt;projekt&gt;-&lt;timestamp&gt;</code></div>
+            </div>
+            <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>Wiederherstellen</button>
+        </form>
+    </div>
 </div>
 {% endif %}
 

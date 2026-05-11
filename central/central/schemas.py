@@ -21,6 +21,7 @@ class BackupConfig(BaseModel):
     webdav_url: str = ""
     webdav_user: str = ""
     webdav_password: str = ""
+    webdav_verify_ssl: bool = True
 
 
 class AgentRegisterResponse(BaseModel):

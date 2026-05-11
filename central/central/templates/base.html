@@ -1,26 +1,37 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}docker-borg{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link href="/static/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/style.css" rel="stylesheet">
 </head>
 <body>
-    <nav>
-        <div class="nav-brand">
-            <strong>docker-borg</strong>
-            <span class="nav-version">v{{ app_version }}</span>
-        </div>
-        <div class="nav-links">
-            <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
-            <a href="/jobs" class="{% if request.url.path.startswith('/jobs') %}active{% endif %}">Jobs</a>
-            <a href="/schedules" class="{% if request.url.path.startswith('/schedules') %}active{% endif %}">Zeitpläne</a>
-            <a href="/settings" class="{% if request.url.path.startswith('/settings') %}active{% endif %}">Einstellungen</a>
+    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-baseline" href="/">
+                <i class="bi bi-shield-lock-fill text-primary me-2"></i>
+                docker-borg
+                <span class="brand-version">v{{ app_version }}</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainnav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainnav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/"><i class="bi bi-speedometer2 me-1"></i> Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.url.path.startswith('/jobs') %}active{% endif %}" href="/jobs"><i class="bi bi-list-check me-1"></i> Jobs</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.url.path.startswith('/schedules') %}active{% endif %}" href="/schedules"><i class="bi bi-calendar3 me-1"></i> Zeitpläne</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.url.path.startswith('/settings') %}active{% endif %}" href="/settings"><i class="bi bi-gear me-1"></i> Einstellungen</a></li>
+                </ul>
+            </div>
         </div>
     </nav>
-    <main>
+    <main class="container py-4">
         {% block content %}{% endblock %}
     </main>
+    <script src="/static/bootstrap.bundle.min.js" defer></script>
 </body>
 </html>

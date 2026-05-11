@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     webdav_url: str = ""
     webdav_user: str = ""
     webdav_password: str = ""
+    webdav_verify_ssl: bool = True
     webdav_mount: str = "/mnt/webdav"
 
     docker_socket: str = "/var/run/docker.sock"

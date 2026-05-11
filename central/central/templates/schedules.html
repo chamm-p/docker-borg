@@ -1,39 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Zeitpläne – docker-borg{% endblock %}
 {% block content %}
-<h1>Zeitpläne</h1>
-
-<p class="muted">Übersicht aller konfigurierten Zeitpläne. Bearbeiten via Agent-Detail-Seite → Tab „Zeitplan“.</p>
+<h1 class="h3 mb-2"><i class="bi bi-calendar3 me-2 text-primary"></i>Zeitpläne</h1>
+<p class="text-muted mb-4">Übersicht aller konfigurierten Zeitpläne. Bearbeiten via Agent-Detail-Seite → Tab „Zeitplan“.</p>
 
 {% if schedules %}
-<div class="table-wrap">
-    <table>
-        <thead>
-            <tr><th>Agent</th><th>Name</th><th>Zeitplan</th><th>Status</th><th>Aufbewahrung</th><th></th></tr>
-        </thead>
-        <tbody>
-            {% for s in schedules %}
-            <tr>
-                <td>{% if agents.get(s.agent_id) %}<a href="/agents/{{ s.agent_id }}?tab=schedule">{{ agents[s.agent_id].hostname }}</a>{% else %}<span class="muted">global</span>{% endif %}</td>
-                <td><strong>{{ s.name }}</strong></td>
-                <td>{{ s|human_schedule }}</td>
-                <td>
-                    {% if s.enabled %}
-                    <span class="badge badge-success">aktiv</span>
-                    {% else %}
-                    <span class="badge">pausiert</span>
-                    {% endif %}
-                </td>
-                <td class="text-small muted">
-                    {% if s.prune_after %}{{ s.keep_daily }}t / {{ s.keep_weekly }}w / {{ s.keep_monthly }}m{% else %}keine{% endif %}
-                </td>
-                <td><a href="/agents/{{ s.agent_id }}?tab=schedule">Bearbeiten</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light"><tr><th>Agent</th><th>Name</th><th>Zeitplan</th><th>Status</th><th>Aufbewahrung</th><th></th></tr></thead>
+            <tbody>
+                {% for s in schedules %}
+                <tr>
+                    <td>{% if agents.get(s.agent_id) %}<a href="/agents/{{ s.agent_id }}?tab=schedule">{{ agents[s.agent_id].hostname }}</a>{% else %}<span class="text-muted">global</span>{% endif %}</td>
+                    <td><strong>{{ s.name }}</strong></td>
+                    <td>{{ s|human_schedule }}</td>
+                    <td>
+                        {% if s.enabled %}<span class="badge text-bg-success">aktiv</span>
+                        {% else %}<span class="badge text-bg-secondary">pausiert</span>{% endif %}
+                    </td>
+                    <td class="text-muted small">{% if s.prune_after %}{{ s.keep_daily }}t / {{ s.keep_weekly }}w / {{ s.keep_monthly }}m{% else %}keine{% endif %}</td>
+                    <td><a href="/agents/{{ s.agent_id }}?tab=schedule" class="btn btn-sm btn-outline-secondary">Bearbeiten</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% else %}
-<div class="empty-state">Noch keine Zeitpläne konfiguriert.</div>
+<div class="text-center py-5 my-4 border rounded bg-body-tertiary">
+    <i class="bi bi-calendar3 display-4 text-muted"></i>
+    <p class="text-muted mt-3 mb-0">Noch keine Zeitpläne konfiguriert.</p>
+</div>
 {% endif %}
 {% endblock %}

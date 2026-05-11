@@ -1,42 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Einstellungen – docker-borg{% endblock %}
 {% block content %}
-<h1>Einstellungen</h1>
+<h1 class="h3 mb-4"><i class="bi bi-gear me-2 text-primary"></i>Einstellungen</h1>
 
 {% set q = request.query_params %}
-{% if q.get('ok') %}<div class="banner banner-success">Passwort geändert.</div>{% endif %}
-{% if q.get('error') == 'current_wrong' %}<div class="banner banner-error">Aktuelles Passwort ist nicht korrekt.</div>{% endif %}
-{% if q.get('error') == 'mismatch' %}<div class="banner banner-error">Neue Passwörter stimmen nicht überein.</div>{% endif %}
-{% if q.get('error') == 'too_short' %}<div class="banner banner-error">Passwort muss mindestens 8 Zeichen lang sein.</div>{% endif %}
+{% if q.get('ok') %}<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i>Passwort geändert.</div>{% endif %}
+{% if q.get('error') == 'current_wrong' %}<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-1"></i>Aktuelles Passwort ist nicht korrekt.</div>{% endif %}
+{% if q.get('error') == 'mismatch' %}<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-1"></i>Neue Passwörter stimmen nicht überein.</div>{% endif %}
+{% if q.get('error') == 'too_short' %}<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-1"></i>Passwort muss mindestens 8 Zeichen lang sein.</div>{% endif %}
 
-<div class="panel">
-    <div class="panel-head">
-        <h2>Admin-Passwort ändern</h2>
-        <p>Das Passwort wird in der Datenbank gespeichert und überschreibt das initial via Environment gesetzte.</p>
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-key me-2"></i>Admin-Passwort ändern</h5>
+        <p class="text-muted small mb-0">Das Passwort wird in der Datenbank gespeichert und überschreibt das initial via Environment gesetzte.</p>
     </div>
-    <form method="post" action="/settings/password">
-        <div class="field">
-            <label for="current_password">Aktuelles Passwort</label>
-            <input type="password" name="current_password" id="current_password" required>
-        </div>
-        <div class="field">
-            <label for="new_password">Neues Passwort</label>
-            <input type="password" name="new_password" id="new_password" required minlength="8">
-            <span class="field-hint">Mindestens 8 Zeichen.</span>
-        </div>
-        <div class="field">
-            <label for="confirm_password">Neues Passwort bestätigen</label>
-            <input type="password" name="confirm_password" id="confirm_password" required minlength="8">
-        </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Passwort ändern</button>
-        </div>
-    </form>
+    <div class="card-body">
+        <form method="post" action="/settings/password" style="max-width: 480px;">
+            <div class="mb-3">
+                <label for="current_password" class="form-label">Aktuelles Passwort</label>
+                <input type="password" name="current_password" id="current_password" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label for="new_password" class="form-label">Neues Passwort</label>
+                <input type="password" name="new_password" id="new_password" class="form-control" required minlength="8">
+                <div class="form-text">Mindestens 8 Zeichen.</div>
+            </div>
+            <div class="mb-3">
+                <label for="confirm_password" class="form-label">Neues Passwort bestätigen</label>
+                <input type="password" name="confirm_password" id="confirm_password" class="form-control" required minlength="8">
+            </div>
+            <hr>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Passwort ändern</button>
+        </form>
+    </div>
 </div>
 
-<div class="panel">
-    <div class="panel-head"><h2>System</h2></div>
-    <p><strong>Version:</strong> v{{ app_version }}</p>
-    <p class="muted text-small">Datenbank-Migrationen werden beim Start automatisch ausgeführt.</p>
+<div class="card">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>System</h5></div>
+    <div class="card-body">
+        <p class="mb-1"><strong>Version:</strong> v{{ app_version }}</p>
+        <p class="text-muted small mb-0">Datenbank-Migrationen werden beim Start automatisch ausgeführt.</p>
+    </div>
 </div>
 {% endblock %}

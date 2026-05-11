@@ -44,12 +44,19 @@ def _check_webdav(agent: Agent) -> tuple[bool, str]:
     auth = None
     if agent.webdav_user:
         auth = (agent.webdav_user, agent.webdav_password or "")
+    verify = bool(agent.webdav_verify_ssl) if agent.webdav_verify_ssl is not None else True
     try:
-        resp = httpx.request("PROPFIND", agent.webdav_url, auth=auth, timeout=10, headers={"Depth": "0"})
+        resp = httpx.request(
+            "PROPFIND", agent.webdav_url,
+            auth=auth, timeout=10,
+            headers={"Depth": "0"},
+            verify=verify,
+        )
     except httpx.RequestError as e:
         return False, f"WebDAV nicht erreichbar: {e}"
+    info = "" if verify else " (SSL-Verifikation deaktiviert)"
     if resp.status_code in (200, 207):
-        return True, "WebDAV erreichbar und Authentifizierung erfolgreich"
+        return True, f"WebDAV erreichbar und Authentifizierung erfolgreich{info}"
     if resp.status_code == 401:
         return False, "WebDAV: Authentifizierung fehlgeschlagen (401)"
     if resp.status_code == 404:

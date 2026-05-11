@@ -1,58 +1,66 @@
 {% extends "base.html" %}
 {% block title %}Dashboard – docker-borg{% endblock %}
 {% block content %}
-<h1>Dashboard</h1>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard</h1>
+    <span class="text-muted small">{{ cards|length }} Agent{{ '' if cards|length == 1 else 's' }} registriert</span>
+</div>
 
 {% if cards %}
-<div class="card-grid">
+<div class="row g-4">
     {% for c in cards %}
-    <div class="agent-card">
-        <div class="agent-card-header">
-            <div class="flex-row">
-                <span class="tl tl-{{ c.traffic_light }}"></span>
-                <span class="agent-card-name"><a href="/agents/{{ c.agent.id }}">{{ c.agent.hostname }}</a></span>
-            </div>
-            <span class="badge badge-{{ 'success' if c.agent.status == 'online' else 'danger' }}">{{ c.agent.status }}</span>
-        </div>
+    <div class="col-md-6 col-xl-4">
+        <div class="card agent-card h-100 shadow-sm">
+            <div class="accent tl-{{ c.traffic_light }}"></div>
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center mb-3">
+                    <span class="tl tl-{{ c.traffic_light }} me-2"></span>
+                    <h5 class="card-title mb-0 flex-grow-1">
+                        <a href="/agents/{{ c.agent.id }}" class="text-body text-decoration-none stretched-link">{{ c.agent.hostname }}</a>
+                    </h5>
+                    <span class="badge text-bg-{{ 'success' if c.agent.status == 'online' else 'danger' }}">{{ c.agent.status }}</span>
+                </div>
 
-        <div class="agent-stats">
-            <div class="agent-stat">
-                <span class="agent-stat-value">{{ c.enabled_count }}/{{ c.backupable_count }}</span>
-                <span class="agent-stat-label">Aktiviert</span>
+                <div class="row g-2 my-3 text-center">
+                    <div class="col-4 stat-block">
+                        <div class="stat-value">{{ c.enabled_count }}<span class="text-muted">/{{ c.backupable_count }}</span></div>
+                        <div class="stat-label">Aktiv</div>
+                    </div>
+                    <div class="col-4 stat-block">
+                        <div class="stat-value">{{ c.container_count }}</div>
+                        <div class="stat-label">Container</div>
+                    </div>
+                    <div class="col-4 stat-block">
+                        <div class="stat-value">
+                            {% if c.last_success and c.last_success.completed_at %}
+                            <span title="{{ c.last_success.completed_at|localtime }}">{{ c.last_success.completed_at|localtime_short }}</span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
+                        <div class="stat-label">Letztes Backup</div>
+                    </div>
+                </div>
             </div>
-            <div class="agent-stat">
-                <span class="agent-stat-value">{{ c.container_count }}</span>
-                <span class="agent-stat-label">Container</span>
+            <div class="card-footer bg-transparent d-flex justify-content-between align-items-center px-4 py-3">
+                <small class="text-muted">
+                    <i class="bi bi-heart-pulse me-1"></i>
+                    {% if c.agent.last_heartbeat %}{{ c.agent.last_heartbeat|relative }}{% else %}—{% endif %}
+                </small>
+                <form method="post" action="/agents/{{ c.agent.id }}/backup" class="position-relative" style="z-index: 2;">
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-play-fill"></i> Backup</button>
+                </form>
             </div>
-            <div class="agent-stat">
-                {% if c.last_success and c.last_success.completed_at %}
-                <span class="agent-stat-value" title="{{ c.last_success.completed_at|localtime }}">{{ c.last_success.completed_at|localtime_short }}</span>
-                {% else %}
-                <span class="agent-stat-value muted">—</span>
-                {% endif %}
-                <span class="agent-stat-label">Letztes Backup</span>
-            </div>
-        </div>
-
-        <div class="agent-card-footer">
-            <span class="agent-card-last">
-                {% if c.agent.last_heartbeat %}
-                Heartbeat: {{ c.agent.last_heartbeat|relative }}
-                {% else %}
-                <span class="muted">noch kein Heartbeat</span>
-                {% endif %}
-            </span>
-            <form method="post" action="/agents/{{ c.agent.id }}/backup">
-                <button type="submit" class="btn btn-primary btn-sm">Backup jetzt</button>
-            </form>
         </div>
     </div>
     {% endfor %}
 </div>
 {% else %}
-<div class="empty-state">
-    <p><strong>Keine Agents registriert</strong></p>
-    <p>Starte einen Agent mit dem Registrierungs-Token, um ihn hier zu sehen.</p>
+<div class="text-center py-5 my-4 border rounded bg-body-tertiary">
+    <i class="bi bi-hdd-network display-4 text-muted"></i>
+    <h2 class="h4 mt-3">Keine Agents registriert</h2>
+    <p class="text-muted mb-0">Starte einen Agent mit dem Registrierungs-Token, um ihn hier zu sehen.</p>
 </div>
 {% endif %}
 {% endblock %}
