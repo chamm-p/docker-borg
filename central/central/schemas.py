@@ -40,6 +40,7 @@ class ContainerPayload(BaseModel):
     root_files: list[str]
     image: str
     status: str
+    has_volumes: bool = False
 
 
 class HeartbeatRequest(BaseModel):

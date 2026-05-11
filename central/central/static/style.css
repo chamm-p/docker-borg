@@ -219,12 +219,38 @@ label {
     margin-bottom: 1rem;
 }
 
+.settings-form fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.8rem 1rem;
+    margin: 0.8rem 0;
+    background: var(--bg);
+}
+
+.settings-form legend {
+    padding: 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 .form-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
+}
+
+.form-row label {
+    min-width: 9rem;
+}
+
+.form-row input[type="text"],
+.form-row input[type="password"] {
+    flex: 1;
+    min-width: 16rem;
 }
 
 input[type="password"] {

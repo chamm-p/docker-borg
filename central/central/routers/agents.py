@@ -103,6 +103,7 @@ def heartbeat(
             root_files=json.dumps(c.root_files),
             image=c.image,
             status=c.status,
+            has_volumes=c.has_volumes,
         )
         db.add(container)
 

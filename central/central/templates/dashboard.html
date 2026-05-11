@@ -12,19 +12,21 @@
         </div>
         <div class="card-body">
             <div class="stat">
-                <span class="stat-value">{{ data.container_count }}</span>
-                <span class="stat-label">Container</span>
+                <span class="stat-value">{{ data.backupable_count }}/{{ data.container_count }}</span>
+                <span class="stat-label">Sicherbar/Total</span>
             </div>
             <div class="stat">
                 <span class="stat-value">{{ data.agent.status }}</span>
                 <span class="stat-label">Status</span>
             </div>
-            {% if data.agent.last_heartbeat %}
             <div class="stat">
-                <span class="stat-value">{{ data.agent.last_heartbeat.strftime('%H:%M:%S') }}</span>
-                <span class="stat-label">Letzter Heartbeat</span>
+                {% if data.last_success and data.last_success.completed_at %}
+                <span class="stat-value badge-success">{{ data.last_success.completed_at.strftime('%d.%m %H:%M') }}</span>
+                {% else %}
+                <span class="stat-value badge-failed">nie</span>
+                {% endif %}
+                <span class="stat-label">Letztes Backup</span>
             </div>
-            {% endif %}
             {% if data.last_job %}
             <div class="stat">
                 <span class="stat-value badge-{{ data.last_job.status }}">{{ data.last_job.status }}</span>

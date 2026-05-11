@@ -94,6 +94,7 @@ class CentralClient:
                             "root_files": c.root_files,
                             "image": c.image,
                             "status": c.status,
+                            "has_volumes": c.has_volumes,
                         }
                         for c in containers
                     ],
@@ -101,7 +102,7 @@ class CentralClient:
                 headers=self._headers(),
             )
             if resp.status_code == 200:
-                self._apply_borg_config(resp.json())
+                self._apply_backup_config(resp.json())
                 return True
             return False
         except httpx.RequestError as e:

@@ -93,6 +93,11 @@ def discover_containers() -> list[ContainerInfo]:
         for c in ctrs:
             all_volume_dirs.update(_get_volume_mount_dirs(c))
 
+        has_volumes = len(all_volume_dirs) > 0
+
+        if not compose_dir_host and not has_volumes:
+            continue
+
         root_files: list[str] = []
         if compose_dir_host:
             compose_dir_local = _host_path_to_local(compose_dir_host)
@@ -111,6 +116,7 @@ def discover_containers() -> list[ContainerInfo]:
             root_files=root_files,
             image=images,
             status="running",
+            has_volumes=has_volumes,
         )
         seen_projects[project] = info
 

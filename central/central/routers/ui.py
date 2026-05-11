@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -18,10 +19,12 @@ templates = Jinja2Templates(directory="central/templates")
 templates.env.globals["app_version"] = APP_VERSION
 
 
-def _agent_status_class(agent: Agent) -> str:
-    if agent.status == "online":
-        return "success"
-    return "danger"
+def _agent_status_class(agent: Agent, last_job: Job | None = None) -> str:
+    if agent.status != "online":
+        return "danger"
+    if last_job and last_job.status == "failed":
+        return "danger"
+    return "success"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -33,12 +36,21 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     for a in agents:
         containers = db.query(Container).filter(Container.agent_id == a.id).all()
         last_job = db.query(Job).filter(Job.agent_id == a.id).order_by(Job.created_at.desc()).first()
+        last_success = (
+            db.query(Job)
+            .filter(Job.agent_id == a.id, Job.job_type == "backup", Job.status == "success")
+            .order_by(Job.completed_at.desc())
+            .first()
+        )
+        backupable_count = sum(1 for c in containers if c.compose_dir and c.root_files and c.root_files != "[]")
         agent_data.append({
             "agent": a,
             "containers": containers,
             "container_count": len(containers),
+            "backupable_count": backupable_count,
             "last_job": last_job,
-            "status_class": _agent_status_class(a),
+            "last_success": last_success,
+            "status_class": _agent_status_class(a, last_job),
         })
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -87,15 +99,40 @@ def update_agent_settings(
     if not agent:
         return HTMLResponse("Agent not found", status_code=404)
     agent.backup_type = backup_type
-    agent.borg_repo = borg_repo
+    if backup_type == "webdav":
+        agent.webdav_url = webdav_url
+        agent.webdav_user = webdav_user
+        if webdav_password and webdav_password != "********":
+            agent.webdav_password = webdav_password
+        agent.borg_repo = "/mnt/webdav/borg"
+    else:
+        agent.borg_repo = borg_repo
     if borg_passphrase and borg_passphrase != "********":
         agent.borg_passphrase = borg_passphrase
-    agent.webdav_url = webdav_url
-    agent.webdav_user = webdav_user
-    if webdav_password and webdav_password != "********":
-        agent.webdav_password = webdav_password
+    elif not agent.borg_passphrase:
+        agent.borg_passphrase = secrets.token_urlsafe(32)
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}", status_code=303)
+
+
+@router.get("/agents/{agent_id}/passphrase")
+def reveal_passphrase(agent_id: int, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent or not agent.borg_passphrase:
+        return PlainTextResponse("(keine Passphrase gesetzt)", status_code=404)
+    return PlainTextResponse(agent.borg_passphrase)
+
+
+@router.get("/agents/{agent_id}/passphrase/download")
+def download_passphrase(agent_id: int, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent or not agent.borg_passphrase:
+        return PlainTextResponse("(keine Passphrase gesetzt)", status_code=404)
+    filename = f"borg-passphrase-{agent.hostname}.txt"
+    return PlainTextResponse(
+        agent.borg_passphrase,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/agents/{agent_id}/backup")

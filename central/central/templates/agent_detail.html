@@ -8,63 +8,85 @@
 
 <div class="meta">
     Status: <strong>{{ agent.status }}</strong> |
-    Version: {{ agent.agent_version or '?' }} |
+    Agent-Version: {{ agent.agent_version or '?' }} |
     Letzter Heartbeat: {{ agent.last_heartbeat.strftime('%Y-%m-%d %H:%M:%S') if agent.last_heartbeat else 'nie' }}
 </div>
 
 <h2>Backup-Ziel</h2>
 <form method="post" action="/agents/{{ agent.id }}/settings" class="settings-form">
     <div class="form-row">
-        <div class="form-group">
-            <label for="backup_type">Typ:</label>
-            <select name="backup_type" id="backup_type" onchange="toggleBackupType()">
-                <option value="ssh" {{ 'selected' if (agent.backup_type or 'ssh') == 'ssh' }}>SSH / Lokal</option>
-                <option value="webdav" {{ 'selected' if agent.backup_type == 'webdav' }}>WebDAV</option>
-            </select>
-        </div>
+        <label for="backup_type"><strong>Typ:</strong></label>
+        <select name="backup_type" id="backup_type" onchange="toggleBackupType()">
+            <option value="ssh" {{ 'selected' if (agent.backup_type or 'ssh') == 'ssh' }}>SSH / Lokaler Pfad</option>
+            <option value="webdav" {{ 'selected' if agent.backup_type == 'webdav' }}>WebDAV</option>
+        </select>
     </div>
 
-    <div class="form-row">
-        <div class="form-group">
-            <label for="borg_repo">Borg Repo:</label>
-            <input type="text" name="borg_repo" id="borg_repo" value="{{ agent.borg_repo or '' }}" placeholder="ssh://user@server/path oder /mnt/webdav/borg" style="width: 24rem">
+    <fieldset id="ssh-section" style="display: {{ 'none' if agent.backup_type == 'webdav' else 'block' }}">
+        <legend>SSH / Lokaler Pfad</legend>
+        <div class="form-row">
+            <label for="borg_repo">Borg Repository:</label>
+            <input type="text" name="borg_repo" id="borg_repo" value="{{ agent.borg_repo or '' }}" placeholder="ssh://user@server/pfad oder /mnt/...">
         </div>
-        <div class="form-group">
-            <label for="borg_passphrase">Passphrase:</label>
-            <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="Passphrase" style="width: 12rem">
-        </div>
-    </div>
+    </fieldset>
 
-    <div id="webdav-fields" style="display: {{ 'flex' if agent.backup_type == 'webdav' else 'none' }}; flex-wrap: wrap; gap: 0.5rem;">
-        <div class="form-group">
-            <label for="webdav_url">WebDAV URL:</label>
-            <input type="text" name="webdav_url" id="webdav_url" value="{{ agent.webdav_url or '' }}" placeholder="https://cloud.example.com/remote.php/dav/files/user/backup" style="width: 24rem">
+    <fieldset id="webdav-section" style="display: {{ 'block' if agent.backup_type == 'webdav' else 'none' }}">
+        <legend>WebDAV</legend>
+        <div class="form-row">
+            <label for="webdav_url">URL:</label>
+            <input type="text" name="webdav_url" id="webdav_url" value="{{ agent.webdav_url or '' }}" placeholder="https://cloud.example.com/remote.php/dav/files/user/backup">
         </div>
-        <div class="form-group">
-            <label for="webdav_user">User:</label>
-            <input type="text" name="webdav_user" id="webdav_user" value="{{ agent.webdav_user or '' }}" placeholder="user" style="width: 10rem">
+        <div class="form-row">
+            <label for="webdav_user">Benutzer:</label>
+            <input type="text" name="webdav_user" id="webdav_user" value="{{ agent.webdav_user or '' }}" placeholder="benutzername">
         </div>
-        <div class="form-group">
+        <div class="form-row">
             <label for="webdav_password">Passwort:</label>
-            <input type="password" name="webdav_password" id="webdav_password" value="{{ '********' if agent.webdav_password else '' }}" placeholder="Passwort" style="width: 10rem">
+            <input type="password" name="webdav_password" id="webdav_password" value="{{ '********' if agent.webdav_password else '' }}" placeholder="••••••••">
         </div>
-    </div>
+        <p class="meta">Repository wird automatisch unter <code>/mnt/webdav/borg</code> angelegt.</p>
+    </fieldset>
 
-    <button type="submit" class="btn btn-primary btn-sm">Speichern</button>
+    <fieldset>
+        <legend>Borg Verschlüsselung</legend>
+        <div class="form-row">
+            <label for="borg_passphrase">Passphrase:</label>
+            <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="leer = automatisch generieren">
+            {% if agent.borg_passphrase %}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="showPassphrase()">Anzeigen</button>
+            <a href="/agents/{{ agent.id }}/passphrase/download" class="btn btn-secondary btn-sm">Download</a>
+            {% endif %}
+        </div>
+        <p class="meta">Verschlüsselt das Borg-Repository. <strong>Bei Verlust sind alle Backups unwiederbringlich verloren.</strong></p>
+        <div id="passphrase-reveal" style="display:none; margin-top: 0.5rem;">
+            <code id="passphrase-value" style="user-select: all; padding: 0.5rem; display: block;"></code>
+        </div>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">Speichern</button>
 </form>
+
 <script>
 function toggleBackupType() {
     var t = document.getElementById('backup_type').value;
-    document.getElementById('webdav-fields').style.display = t === 'webdav' ? 'flex' : 'none';
+    document.getElementById('ssh-section').style.display = t === 'ssh' ? 'block' : 'none';
+    document.getElementById('webdav-section').style.display = t === 'webdav' ? 'block' : 'none';
+}
+function showPassphrase() {
+    fetch('/agents/{{ agent.id }}/passphrase').then(r => r.text()).then(t => {
+        document.getElementById('passphrase-value').textContent = t;
+        document.getElementById('passphrase-reveal').style.display = 'block';
+    });
 }
 </script>
-{% if not agent.borg_repo %}
-<p class="meta" style="margin-top: 0.5rem;">Backup-Ziel muss konfiguriert werden, bevor Backups laufen.</p>
+
+{% if not agent.borg_repo and (agent.backup_type or 'ssh') == 'ssh' %}
+<p class="meta">Backup-Ziel muss konfiguriert werden, bevor Backups laufen.</p>
 {% endif %}
 
 <div class="actions" style="margin: 1rem 0;">
     <form method="post" action="/agents/{{ agent.id }}/backup" style="display:inline">
-        <button type="submit" class="btn btn-primary">Backup Now</button>
+        <button type="submit" class="btn btn-primary">Backup jetzt starten</button>
     </form>
 </div>
 
@@ -72,9 +94,9 @@ function toggleBackupType() {
 <table>
     <thead>
         <tr>
+            <th></th>
             <th>Compose-Projekt</th>
             <th>Container</th>
-            <th>Image</th>
             <th>Verzeichnis</th>
             <th>Root-Dateien</th>
         </tr>
@@ -82,14 +104,22 @@ function toggleBackupType() {
     <tbody>
         {% for c in containers %}
         <tr>
+            <td>
+                {% if c.compose_dir and c._root_files_list %}
+                <span title="Wird gesichert" style="color: var(--success);">●</span>
+                {% else %}
+                <span title="Nicht sicherbar (kein Compose-Projekt)" style="color: var(--text-muted);">○</span>
+                {% endif %}
+            </td>
             <td><strong>{{ c.compose_project }}</strong></td>
             <td>{{ c.container_name }}</td>
-            <td><code>{{ c.image }}</code></td>
-            <td><code>{{ c.compose_dir }}</code></td>
+            <td>{% if c.compose_dir %}<code>{{ c.compose_dir }}</code>{% else %}<span class="meta">—</span>{% endif %}</td>
             <td>
-                {% for f in c._root_files_list %}
-                <code>{{ f }}</code>{% if not loop.last %}, {% endif %}
-                {% endfor %}
+                {% if c._root_files_list %}
+                    {% for f in c._root_files_list %}<code>{{ f }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+                {% else %}
+                    <span class="meta">—</span>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -128,8 +158,11 @@ function toggleBackupType() {
 
 <h2>Restore</h2>
 <form method="post" action="/agents/{{ agent.id }}/restore">
-    <label for="archive">Archiv-Name:</label>
-    <input type="text" name="archive" id="archive" placeholder="hostname-project-20260510T030000" required>
-    <button type="submit" class="btn btn-warning">Restore</button>
+    <div class="form-row">
+        <label for="archive">Archiv-Name:</label>
+        <input type="text" name="archive" id="archive" placeholder="{{ agent.hostname }}-projekt-20260510T030000" required>
+        <button type="submit" class="btn btn-warning">Restore</button>
+    </div>
+    <p class="meta">Archivname-Format: <code>{{ agent.hostname }}-&lt;projekt&gt;-&lt;timestamp&gt;</code></p>
 </form>
 {% endblock %}

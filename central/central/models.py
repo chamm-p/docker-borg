@@ -40,6 +40,7 @@ class Container(Base):
     root_files: Mapped[str] = mapped_column(Text, default="[]")
     image: Mapped[str] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(20), default="running")
+    has_volumes: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     agent: Mapped["Agent"] = relationship(back_populates="containers")

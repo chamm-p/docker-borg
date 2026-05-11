@@ -28,6 +28,7 @@ class ContainerInfo:
     root_files: list[str]
     image: str
     status: str
+    has_volumes: bool = False
 
 
 @dataclass
