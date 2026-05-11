@@ -7,14 +7,11 @@ services:
       - DBORG_AGENT_NAME=${DBORG_AGENT_NAME:-my-host}
       - DBORG_CENTRAL_URL=${DBORG_CENTRAL_URL:-http://central:8080}
       - DBORG_REGISTRATION_TOKEN=${DBORG_REGISTRATION_TOKEN:-change-me}
-      - DBORG_BORG_REPO=${DBORG_BORG_REPO:-/backups}
-      - DBORG_BORG_PASSPHRASE=${DBORG_BORG_PASSPHRASE:-change-me}
-      - DBORG_DOCKER_HOST_DIR=${DBORG_DOCKER_HOST_DIR:-/host/docker}
+      - DBORG_DOCKER_HOST_DIR=/host/docker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${DOCKER_HOST_DIR:-/home/user/docker}:/host/docker:ro
       - agent-data:/data
-      - ${BACKUP_TARGET:-./backups}:/backups
     command: ["daemon"]
 
 volumes:
