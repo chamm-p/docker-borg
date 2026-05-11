@@ -109,7 +109,8 @@ def heartbeat(
         if row:
             row.container_id = c.container_id
             row.container_name = c.container_name
-            row.compose_dir = c.compose_dir
+            if c.compose_dir or not row.manual_compose_dir:
+                row.compose_dir = c.compose_dir
             row.root_files = json.dumps(c.root_files)
             row.image = c.image
             row.status = c.status

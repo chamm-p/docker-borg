@@ -64,11 +64,14 @@ def _create_scheduled_jobs(db: Session):
                 .all()
             )
             projects = sorted({c.compose_project for c in enabled_containers if c.compose_project})
+            overrides = {c.compose_project: c.manual_compose_dir for c in enabled_containers if c.manual_compose_dir}
+            params = {"compose_dirs": overrides} if overrides else {}
             job = Job(
                 agent_id=agent.id,
                 schedule_id=schedule.id,
                 job_type="backup",
                 containers=json.dumps(projects) if projects else None,
+                params=json.dumps(params) if params else "{}",
             )
             db.add(job)
             logger.info("Scheduled backup job for agent %s (schedule %d)", agent.hostname, schedule.id)

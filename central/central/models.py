@@ -52,6 +52,7 @@ class Container(Base):
     container_name: Mapped[str] = mapped_column(String(255))
     compose_project: Mapped[str] = mapped_column(String(255))
     compose_dir: Mapped[str] = mapped_column(String(500), default="")
+    manual_compose_dir: Mapped[str | None] = mapped_column(String(500), nullable=True)
     root_files: Mapped[str] = mapped_column(Text, default="[]")
     image: Mapped[str] = mapped_column(String(500), default="")
     status: Mapped[str] = mapped_column(String(20), default="running")

@@ -202,6 +202,21 @@ def download_passphrase(agent_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/agents/{agent_id}/containers/{container_id}/path")
+def set_manual_path(
+    agent_id: int,
+    container_id: int,
+    manual_compose_dir: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    row = db.query(Container).filter(Container.id == container_id, Container.agent_id == agent_id).first()
+    if not row:
+        return HTMLResponse("Container nicht gefunden", status_code=404)
+    row.manual_compose_dir = manual_compose_dir.strip() or None
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
+
+
 @router.post("/agents/{agent_id}/containers")
 async def update_container_selection(
     agent_id: int,
@@ -266,18 +281,25 @@ def delete_schedule(agent_id: int, schedule_id: int, db: Session = Depends(get_d
     return RedirectResponse(f"/agents/{agent_id}?tab=schedule", status_code=303)
 
 
-@router.post("/agents/{agent_id}/backup")
-def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
+def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
     enabled = (
         db.query(Container)
         .filter(Container.agent_id == agent_id, Container.backup_enabled == True)  # noqa: E712
         .all()
     )
     projects = sorted({c.compose_project for c in enabled if c.compose_project})
+    overrides = {c.compose_project: c.manual_compose_dir for c in enabled if c.manual_compose_dir}
+    return projects, {"compose_dirs": overrides} if overrides else {}
+
+
+@router.post("/agents/{agent_id}/backup")
+def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
+    projects, params = _backup_params_for(agent_id, db)
     job = Job(
         agent_id=agent_id,
         job_type="backup",
         containers=json.dumps(projects) if projects else None,
+        params=json.dumps(params) if params else "{}",
     )
     db.add(job)
     db.commit()

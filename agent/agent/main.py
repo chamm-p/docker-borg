@@ -8,7 +8,7 @@ import time
 from dataclasses import asdict
 
 from .config import settings
-from .discovery import discover_containers
+from .discovery import discover_containers, _host_path_to_local, _collect_root_files
 from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo
 from .client import CentralClient
 from .models import JobType
@@ -119,9 +119,36 @@ def _execute_job(job, containers, client: CentralClient):
             if job.containers:
                 targets = [c for c in containers if c.compose_project in job.containers]
 
+            overrides = (job.params or {}).get("compose_dirs", {}) if job.params else {}
+            existing_projects = {c.compose_project for c in targets}
+            for project, manual_dir in overrides.items():
+                if project not in existing_projects and project in (job.containers or []):
+                    from .models import ContainerInfo
+                    targets.append(ContainerInfo(
+                        container_id="manual",
+                        container_name="(manual)",
+                        compose_project=project,
+                        compose_dir=manual_dir,
+                        root_files=[],
+                        image="",
+                        status="manual",
+                    ))
+
             all_logs = []
             all_success = True
             for c in targets:
+                manual = overrides.get(c.compose_project)
+                if manual:
+                    c.compose_dir = manual
+                    local = _host_path_to_local(manual)
+                    if local.is_dir():
+                        from .discovery import _get_volume_mount_dirs  # not used; keep simple
+                        c.root_files = _collect_root_files(local, set())
+                    else:
+                        from .models import LogEntry
+                        all_logs.append(LogEntry("error", f"Manueller Pfad {manual} im Agent nicht zugreifbar (Project {c.compose_project})"))
+                        all_success = False
+                        continue
                 if not c.compose_dir or not c.root_files:
                     continue
                 r = create_backup(c)

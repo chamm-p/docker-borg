@@ -284,12 +284,19 @@ function revealPassphrase() {
     <div class="card-body p-0">
         {% if containers %}
         {% set unreachable = containers|selectattr('compose_dir')|rejectattr('compose_dir_accessible')|list %}
+        {% set no_compose = containers|rejectattr('compose_dir')|rejectattr('manual_compose_dir')|list %}
         {% if unreachable %}
         <div class="alert alert-warning rounded-0 mb-0 border-0 border-bottom">
             <i class="bi bi-exclamation-triangle-fill me-1"></i>
             <strong>{{ unreachable|length }}</strong> Compose-Verzeichnis{% if unreachable|length > 1 %}se sind{% else %} ist{% endif %} im Agent-Container nicht zugreifbar.
             Setze in der Agent-Compose <code>DBORG_HOST_BASE_DIR</code> auf den Host-Pfad
-            und mount entsprechend (z.B. <code>/home/user/docker:/host/docker:ro</code> + <code>DBORG_HOST_BASE_DIR=/home/user/docker</code>).
+            und mount entsprechend (z.B. <code>/home/user/docker:/host/docker:ro</code>).
+        </div>
+        {% endif %}
+        {% if no_compose %}
+        <div class="alert alert-info rounded-0 mb-0 border-0 border-bottom">
+            <i class="bi bi-info-circle-fill me-1"></i>
+            Bei Container ohne Compose-Label (z.B. Nextcloud AIO) kannst du den Pfad manuell unten in der Spalte „Verzeichnis" eintragen.
         </div>
         {% endif %}
         <form method="post" action="/agents/{{ agent.id }}/containers">
@@ -306,24 +313,39 @@ function revealPassphrase() {
                     </thead>
                     <tbody>
                         {% for c in containers %}
+                        {% set effective_dir = c.manual_compose_dir or c.compose_dir %}
                         <tr>
                             <td>
-                                {% if c.compose_dir %}
+                                {% if effective_dir %}
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="enabled" value="{{ c.id }}" {% if c.backup_enabled %}checked{% endif %}>
                                 </div>
                                 {% else %}
-                                <span class="text-muted" title="Kein Compose-Projekt → nichts zu sichern">—</span>
+                                <span class="text-muted" title="Pfad eintragen, um zu aktivieren">—</span>
                                 {% endif %}
                             </td>
                             <td><strong>{{ c.compose_project }}</strong></td>
                             <td class="text-muted small">{{ c.container_name }}</td>
-                            <td>{% if c.compose_dir %}<code class="small">{{ c.compose_dir }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td style="max-width: 360px;">
+                                {% if c.compose_dir %}
+                                <code class="small">{{ c.compose_dir }}</code>
+                                {% else %}
+                                <form method="post" action="/agents/{{ agent.id }}/containers/{{ c.id }}/path" class="d-flex gap-2 m-0" style="max-width: 100%;">
+                                    <input type="text" name="manual_compose_dir" class="form-control form-control-sm" value="{{ c.manual_compose_dir or '' }}" placeholder="/home/user/docker/{{ c.compose_project }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Pfad speichern"><i class="bi bi-check-lg"></i></button>
+                                </form>
+                                {% if c.manual_compose_dir %}
+                                <small class="text-muted">Manuell gesetzt</small>
+                                {% endif %}
+                                {% endif %}
+                            </td>
                             <td>
-                                {% if not c.compose_dir %}
-                                <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>kein Compose</span>
+                                {% if not effective_dir %}
+                                <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>Pfad fehlt</span>
                                 {% elif c._files %}
                                 <span class="badge text-bg-success" title="{{ c._files|join(', ') }}"><i class="bi bi-check-circle me-1"></i>{{ c._files|length }} Datei{% if c._files|length != 1 %}en{% endif %}</span>
+                                {% elif c.manual_compose_dir %}
+                                <span class="badge text-bg-info" title="Manuell gesetzt – wird beim Backup verwendet"><i class="bi bi-cursor me-1"></i>manuell</span>
                                 {% elif c.compose_dir_accessible %}
                                 <span class="badge text-bg-warning" title="Verzeichnis lesbar, aber keine docker-compose.yml / .env / Dockerfile gefunden (bis Tiefe 2)"><i class="bi bi-question-circle me-1"></i>keine Backup-Dateien</span>
                                 {% else %}
