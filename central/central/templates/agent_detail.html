@@ -324,7 +324,14 @@ function revealPassphrase() {
                                 <span class="text-muted" title="Pfad eintragen, um zu aktivieren">—</span>
                                 {% endif %}
                             </td>
-                            <td><strong>{{ c.compose_project }}</strong></td>
+                            <td>
+                                {% if c.manual_compose_dir %}
+                                <strong>{{ c.manual_compose_dir.rstrip('/').rsplit('/', 1)[-1] }}</strong>
+                                <div class="text-muted small">{{ c.compose_project }}</div>
+                                {% else %}
+                                <strong>{{ c.compose_project }}</strong>
+                                {% endif %}
+                            </td>
                             <td class="text-muted small">{{ c.container_name }}</td>
                             <td style="max-width: 360px;">
                                 {% if c.compose_dir %}
@@ -408,7 +415,7 @@ function revealPassphrase() {
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
                     <label for="name" class="form-label">Name</label>
-                    <input type="text" name="name" id="name" class="form-control" value="Backup" required>
+                    <input type="text" name="name" id="name" class="form-control" value="{{ agent.hostname }}" required>
                 </div>
                 <div class="col-md-6">
                     <label for="schedule_kind" class="form-label">Häufigkeit</label>
