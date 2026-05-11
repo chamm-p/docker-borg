@@ -94,24 +94,8 @@ def agent_detail(
     })
 
 
-@router.post("/agents/{agent_id}/target")
-def update_target(
-    agent_id: int,
-    backup_type: str = Form("scp"),
-    scp_host: str = Form(""),
-    scp_user: str = Form(""),
-    scp_path: str = Form(""),
-    scp_port: int = Form(22),
-    local_path: str = Form(""),
-    webdav_url: str = Form(""),
-    webdav_user: str = Form(""),
-    webdav_password: str = Form(""),
-    webdav_verify_ssl: bool = Form(False),
-    db: Session = Depends(get_db),
-):
-    agent = db.query(Agent).filter(Agent.id == agent_id).first()
-    if not agent:
-        return HTMLResponse("Agent nicht gefunden", status_code=404)
+def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
+                       local_path, webdav_url, webdav_user, webdav_password, webdav_insecure):
     agent.backup_type = backup_type
     if backup_type == "scp":
         agent.scp_host = scp_host
@@ -127,17 +111,54 @@ def update_target(
         agent.webdav_user = webdav_user
         if webdav_password and webdav_password != "********":
             agent.webdav_password = webdav_password
-        agent.webdav_verify_ssl = webdav_verify_ssl
+        agent.webdav_verify_ssl = not webdav_insecure
         agent.borg_repo = "/mnt/webdav/borg"
+
+
+@router.post("/agents/{agent_id}/target")
+def update_target(
+    agent_id: int,
+    backup_type: str = Form("scp"),
+    scp_host: str = Form(""),
+    scp_user: str = Form(""),
+    scp_path: str = Form(""),
+    scp_port: int = Form(22),
+    local_path: str = Form(""),
+    webdav_url: str = Form(""),
+    webdav_user: str = Form(""),
+    webdav_password: str = Form(""),
+    webdav_insecure: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
+                       local_path, webdav_url, webdav_user, webdav_password, webdav_insecure)
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=target", status_code=303)
 
 
 @router.post("/agents/{agent_id}/target/check")
-def check_target(agent_id: int, db: Session = Depends(get_db)):
+def check_target(
+    agent_id: int,
+    backup_type: str = Form("scp"),
+    scp_host: str = Form(""),
+    scp_user: str = Form(""),
+    scp_path: str = Form(""),
+    scp_port: int = Form(22),
+    local_path: str = Form(""),
+    webdav_url: str = Form(""),
+    webdav_user: str = Form(""),
+    webdav_password: str = Form(""),
+    webdav_insecure: bool = Form(False),
+    db: Session = Depends(get_db),
+):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
+    _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
+                       local_path, webdav_url, webdav_user, webdav_password, webdav_insecure)
     ok, msg = check_connection(agent)
     record_result(agent, ok, msg)
     db.commit()
