@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     docker_socket: str = "/var/run/docker.sock"
     docker_host_dir: str = "/host/docker"
+    host_base_dir: str = ""
 
     root_file_globs: list[str] = [
         "docker-compose*.yml",

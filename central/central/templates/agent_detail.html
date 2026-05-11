@@ -283,6 +283,15 @@ function revealPassphrase() {
     </div>
     <div class="card-body p-0">
         {% if containers %}
+        {% set unreachable = containers|selectattr('compose_dir')|rejectattr('_files')|list %}
+        {% if unreachable %}
+        <div class="alert alert-warning rounded-0 mb-0 border-0 border-bottom">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            <strong>{{ unreachable|length }}</strong> Compose-Verzeichnis{% if unreachable|length > 1 %}se sind{% else %} ist{% endif %} im Agent nicht erreichbar
+            (Spalte „Status"). Setze in der Agent-Compose <code>DBORG_HOST_BASE_DIR</code> auf den Host-Pfad
+            und mount entsprechend (z.B. <code>/home/user/docker:/host/docker:ro</code> + <code>DBORG_HOST_BASE_DIR=/home/user/docker</code>).
+        </div>
+        {% endif %}
         <form method="post" action="/agents/{{ agent.id }}/containers">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 align-middle">
@@ -292,29 +301,31 @@ function revealPassphrase() {
                             <th>Compose-Projekt</th>
                             <th>Container</th>
                             <th>Verzeichnis</th>
-                            <th>Root-Dateien</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for c in containers %}
                         <tr>
                             <td>
-                                {% if c._sicherbar %}
+                                {% if c.compose_dir %}
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="enabled" value="{{ c.id }}" {% if c.backup_enabled %}checked{% endif %}>
                                 </div>
                                 {% else %}
-                                <span class="text-muted" title="Kein Compose-Projekt → nicht sicherbar">—</span>
+                                <span class="text-muted" title="Kein Compose-Projekt → nichts zu sichern">—</span>
                                 {% endif %}
                             </td>
                             <td><strong>{{ c.compose_project }}</strong></td>
                             <td class="text-muted small">{{ c.container_name }}</td>
                             <td>{% if c.compose_dir %}<code class="small">{{ c.compose_dir }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                             <td>
-                                {% if c._files %}
-                                {% for f in c._files %}<code class="small me-1">{{ f }}</code>{% endfor %}
+                                {% if not c.compose_dir %}
+                                <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>kein Compose</span>
+                                {% elif c._files %}
+                                <span class="badge text-bg-success" title="{{ c._files|join(', ') }}"><i class="bi bi-check-circle me-1"></i>{{ c._files|length }} Datei{% if c._files|length != 1 %}en{% endif %}</span>
                                 {% else %}
-                                <span class="text-muted">—</span>
+                                <span class="badge text-bg-warning" title="Verzeichnis im Agent nicht lesbar"><i class="bi bi-exclamation-triangle me-1"></i>nicht erreichbar</span>
                                 {% endif %}
                             </td>
                         </tr>

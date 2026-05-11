@@ -38,18 +38,23 @@ def _get_volume_mount_dirs(container: docker.models.containers.Container) -> set
 def _host_path_to_local(host_path: str) -> Path:
     """Map a host path to the mounted path inside the agent container.
 
-    The agent mounts the host's docker parent directory at /host/docker.
-    E.g. if DOCKER_HOST_DIR=/home/user/docker and compose_dir is
-    /home/user/docker/myapp, the local path is /host/docker/myapp.
+    The agent mounts the host's docker parent directory at DOCKER_HOST_DIR
+    (default /host/docker). HOST_BASE_DIR tells us the host-side base of
+    that mount (e.g. /home/user/docker or /share/Container). The relative
+    portion is preserved.
     """
-    host_dir = settings.docker_host_dir
+    docker_host_dir = settings.docker_host_dir
     if host_path.startswith("/host/"):
         return Path(host_path)
-    # Try to find the relative portion after the host docker dir base
-    # We need the original host path from the label and map it
-    # The env DBORG_DOCKER_HOST_DIR tells us what the host base is
-    # We'll store the original host base separately
-    return Path(host_dir) / Path(host_path).name
+
+    if settings.host_base_dir:
+        try:
+            rel = Path(host_path).relative_to(settings.host_base_dir)
+            return Path(docker_host_dir) / rel
+        except ValueError:
+            pass
+
+    return Path(docker_host_dir) / Path(host_path).name
 
 
 def _collect_root_files(compose_dir_local: Path, volume_dirs: set[str]) -> list[str]:
@@ -101,7 +106,14 @@ def discover_containers() -> list[ContainerInfo]:
         root_files: list[str] = []
         if compose_dir_host:
             compose_dir_local = _host_path_to_local(compose_dir_host)
-            root_files = _collect_root_files(compose_dir_local, all_volume_dirs)
+            if compose_dir_local.is_dir():
+                root_files = _collect_root_files(compose_dir_local, all_volume_dirs)
+            else:
+                logger.warning(
+                    "Compose dir %s mapped to %s but not accessible in agent. "
+                    "Check DBORG_HOST_BASE_DIR and volume mount.",
+                    compose_dir_host, compose_dir_local,
+                )
 
         container_names = ", ".join(c.name for c in ctrs if c.name)
         images = ", ".join(

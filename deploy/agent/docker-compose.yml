@@ -12,10 +12,15 @@ services:
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
       - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080
       - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
-      - DBORG_DOCKER_HOST_DIR=/host/docker
+      # Where compose project dirs live on the host (parent directory).
+      # Examples:
+      #   QNAP/Synology Container Station: /share/Container or /volume1/docker
+      #   Linux user setup: /home/<user>/docker
+      - DBORG_HOST_BASE_DIR=/home/CHANGE_ME_USER/docker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /share/Container:/host/docker:ro
+      # Mount source MUST equal DBORG_HOST_BASE_DIR above
+      - /home/CHANGE_ME_USER/docker:/host/docker:ro
       - agent-data:/data
     command: ["daemon"]
 
