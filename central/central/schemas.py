@@ -11,18 +11,25 @@ class AgentRegisterRequest(BaseModel):
     token: str
 
 
+class BackupConfig(BaseModel):
+    backup_type: str = "ssh"
+    borg_repo: str = ""
+    borg_passphrase: str = ""
+    webdav_url: str = ""
+    webdav_user: str = ""
+    webdav_password: str = ""
+
+
 class AgentRegisterResponse(BaseModel):
     agent_id: int
     agent_token: str
-    borg_repo: str = ""
-    borg_passphrase: str = ""
+    backup: BackupConfig = BackupConfig()
     poll_interval_seconds: int = 30
 
 
 class HeartbeatResponse(BaseModel):
     ack: bool = True
-    borg_repo: str = ""
-    borg_passphrase: str = ""
+    backup: BackupConfig = BackupConfig()
 
 
 class ContainerPayload(BaseModel):

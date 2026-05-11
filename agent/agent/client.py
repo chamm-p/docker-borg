@@ -39,14 +39,21 @@ class CentralClient:
     def is_registered(self) -> bool:
         return self._token is not None
 
-    def _apply_borg_config(self, data: dict):
-        repo = data.get("borg_repo", "")
-        passphrase = data.get("borg_passphrase", "")
-        if repo:
-            settings.borg_repo = repo
-            logger.info("Borg repo set from central: %s", repo)
-        if passphrase:
-            settings.borg_passphrase = passphrase
+    def _apply_backup_config(self, data: dict):
+        backup = data.get("backup", data)
+        if isinstance(backup, dict):
+            repo = backup.get("borg_repo", "")
+            passphrase = backup.get("borg_passphrase", "")
+            if repo:
+                settings.borg_repo = repo
+                logger.info("Borg repo set from central: %s", repo)
+            if passphrase:
+                settings.borg_passphrase = passphrase
+
+            settings.backup_type = backup.get("backup_type", "ssh")
+            settings.webdav_url = backup.get("webdav_url", "")
+            settings.webdav_user = backup.get("webdav_user", "")
+            settings.webdav_password = backup.get("webdav_password", "")
 
     def register(self) -> bool:
         hostname = settings.agent_name or socket.gethostname()
@@ -63,7 +70,7 @@ class CentralClient:
             if resp.status_code == 201:
                 data = resp.json()
                 self._save_token(data["agent_token"])
-                self._apply_borg_config(data)
+                self._apply_backup_config(data)
                 logger.info("Registered with central as '%s'", hostname)
                 return True
             logger.error("Registration failed: %s %s", resp.status_code, resp.text)

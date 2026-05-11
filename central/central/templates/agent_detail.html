@@ -13,17 +13,51 @@
 </div>
 
 <h2>Backup-Ziel</h2>
-<form method="post" action="/agents/{{ agent.id }}/settings" class="form-inline">
-    <div class="form-group">
-        <label for="borg_repo">Borg Repo:</label>
-        <input type="text" name="borg_repo" id="borg_repo" value="{{ agent.borg_repo or '' }}" placeholder="ssh://user@server/path" style="width: 20rem">
+<form method="post" action="/agents/{{ agent.id }}/settings" class="settings-form">
+    <div class="form-row">
+        <div class="form-group">
+            <label for="backup_type">Typ:</label>
+            <select name="backup_type" id="backup_type" onchange="toggleBackupType()">
+                <option value="ssh" {{ 'selected' if (agent.backup_type or 'ssh') == 'ssh' }}>SSH / Lokal</option>
+                <option value="webdav" {{ 'selected' if agent.backup_type == 'webdav' }}>WebDAV</option>
+            </select>
+        </div>
     </div>
-    <div class="form-group">
-        <label for="borg_passphrase">Passphrase:</label>
-        <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="Passphrase" style="width: 12rem">
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="borg_repo">Borg Repo:</label>
+            <input type="text" name="borg_repo" id="borg_repo" value="{{ agent.borg_repo or '' }}" placeholder="ssh://user@server/path oder /mnt/webdav/borg" style="width: 24rem">
+        </div>
+        <div class="form-group">
+            <label for="borg_passphrase">Passphrase:</label>
+            <input type="password" name="borg_passphrase" id="borg_passphrase" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="Passphrase" style="width: 12rem">
+        </div>
     </div>
+
+    <div id="webdav-fields" style="display: {{ 'flex' if agent.backup_type == 'webdav' else 'none' }}; flex-wrap: wrap; gap: 0.5rem;">
+        <div class="form-group">
+            <label for="webdav_url">WebDAV URL:</label>
+            <input type="text" name="webdav_url" id="webdav_url" value="{{ agent.webdav_url or '' }}" placeholder="https://cloud.example.com/remote.php/dav/files/user/backup" style="width: 24rem">
+        </div>
+        <div class="form-group">
+            <label for="webdav_user">User:</label>
+            <input type="text" name="webdav_user" id="webdav_user" value="{{ agent.webdav_user or '' }}" placeholder="user" style="width: 10rem">
+        </div>
+        <div class="form-group">
+            <label for="webdav_password">Passwort:</label>
+            <input type="password" name="webdav_password" id="webdav_password" value="{{ '********' if agent.webdav_password else '' }}" placeholder="Passwort" style="width: 10rem">
+        </div>
+    </div>
+
     <button type="submit" class="btn btn-primary btn-sm">Speichern</button>
 </form>
+<script>
+function toggleBackupType() {
+    var t = document.getElementById('backup_type').value;
+    document.getElementById('webdav-fields').style.display = t === 'webdav' ? 'flex' : 'none';
+}
+</script>
 {% if not agent.borg_repo %}
 <p class="meta" style="margin-top: 0.5rem;">Backup-Ziel muss konfiguriert werden, bevor Backups laufen.</p>
 {% endif %}

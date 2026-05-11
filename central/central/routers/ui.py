@@ -72,16 +72,25 @@ def agent_detail(agent_id: int, request: Request, db: Session = Depends(get_db))
 @router.post("/agents/{agent_id}/settings")
 def update_agent_settings(
     agent_id: int,
+    backup_type: str = Form("ssh"),
     borg_repo: str = Form(""),
     borg_passphrase: str = Form(""),
+    webdav_url: str = Form(""),
+    webdav_user: str = Form(""),
+    webdav_password: str = Form(""),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent not found", status_code=404)
+    agent.backup_type = backup_type
     agent.borg_repo = borg_repo
     if borg_passphrase and borg_passphrase != "********":
         agent.borg_passphrase = borg_passphrase
+    agent.webdav_url = webdav_url
+    agent.webdav_user = webdav_user
+    if webdav_password and webdav_password != "********":
+        agent.webdav_password = webdav_password
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}", status_code=303)
 

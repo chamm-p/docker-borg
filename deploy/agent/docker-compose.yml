@@ -3,6 +3,10 @@ services:
     image: ghcr.io/chamm-p/docker-borg-agent:latest
     container_name: dborg-agent
     restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
     environment:
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
       - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080

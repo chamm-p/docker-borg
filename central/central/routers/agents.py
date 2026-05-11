@@ -11,9 +11,20 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import Agent, Container
-from ..schemas import AgentRegisterRequest, AgentRegisterResponse, HeartbeatRequest, HeartbeatResponse
+from ..schemas import AgentRegisterRequest, AgentRegisterResponse, BackupConfig, HeartbeatRequest, HeartbeatResponse
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
+
+
+def _backup_config(agent: Agent) -> BackupConfig:
+    return BackupConfig(
+        backup_type=agent.backup_type or "ssh",
+        borg_repo=agent.borg_repo or "",
+        borg_passphrase=agent.borg_passphrase or "",
+        webdav_url=agent.webdav_url or "",
+        webdav_user=agent.webdav_user or "",
+        webdav_password=agent.webdav_password or "",
+    )
 
 
 def _hash_token(token: str) -> str:
@@ -50,8 +61,7 @@ def register(req: AgentRegisterRequest, db: Session = Depends(get_db)):
         return AgentRegisterResponse(
             agent_id=existing.id,
             agent_token=agent_token,
-            borg_repo=existing.borg_repo or "",
-            borg_passphrase=existing.borg_passphrase or "",
+            backup=_backup_config(existing),
         )
 
     agent_token = secrets.token_urlsafe(32)
@@ -68,8 +78,7 @@ def register(req: AgentRegisterRequest, db: Session = Depends(get_db)):
     return AgentRegisterResponse(
         agent_id=agent.id,
         agent_token=agent_token,
-        borg_repo=agent.borg_repo or "",
-        borg_passphrase=agent.borg_passphrase or "",
+        backup=_backup_config(agent),
     )
 
 
@@ -98,7 +107,4 @@ def heartbeat(
         db.add(container)
 
     db.commit()
-    return HeartbeatResponse(
-        borg_repo=agent.borg_repo or "",
-        borg_passphrase=agent.borg_passphrase or "",
-    )
+    return HeartbeatResponse(backup=_backup_config(agent))

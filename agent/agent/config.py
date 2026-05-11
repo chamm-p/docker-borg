@@ -9,8 +9,13 @@ class Settings(BaseSettings):
     registration_token: str = ""
     poll_interval: int = 30
 
+    backup_type: str = "ssh"
     borg_repo: str = ""
     borg_passphrase: str = ""
+    webdav_url: str = ""
+    webdav_user: str = ""
+    webdav_password: str = ""
+    webdav_mount: str = "/mnt/webdav"
 
     docker_socket: str = "/var/run/docker.sock"
     docker_host_dir: str = "/host/docker"

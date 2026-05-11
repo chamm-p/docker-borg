@@ -12,6 +12,7 @@ from .discovery import discover_containers
 from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo
 from .client import CentralClient
 from .models import JobType
+from .webdav import ensure_mounted, unmount
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -38,6 +39,9 @@ def cmd_discover(args):
 
 
 def cmd_backup(args):
+    if not ensure_mounted():
+        print("ERROR: Could not mount backup target")
+        sys.exit(1)
     init_repo()
     containers = discover_containers()
     if args.project:
@@ -85,7 +89,12 @@ def cmd_daemon(args):
 
             jobs = client.poll_jobs()
             for job in jobs:
-                _execute_job(job, containers, client)
+                if ensure_mounted():
+                    _execute_job(job, containers, client)
+                else:
+                    logger.error("Backup target not available, skipping job %d", job.job_id)
+                    from .models import LogEntry
+                    client.report_job(job.job_id, "failed", logs=[LogEntry("error", "Backup target mount failed")])
 
         except Exception:
             logger.exception("Error in poll loop")
@@ -95,6 +104,7 @@ def cmd_daemon(args):
                 break
             time.sleep(1)
 
+    unmount()
     client.close()
     logger.info("Agent daemon stopped")
 
