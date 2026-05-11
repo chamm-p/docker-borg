@@ -1,0 +1,17 @@
+services:
+  central:
+    image: ghcr.io/chamm-p/docker-borg-central:latest
+    container_name: dborg-central
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
+      - DBORG_ADMIN_PASSWORD=CHANGE_ME_ADMIN_PASSWORD
+      - DBORG_SECRET_KEY=CHANGE_ME_SECRET_KEY
+      - DBORG_LOG_LEVEL=INFO
+    volumes:
+      - central-data:/app/data
+
+volumes:
+  central-data:

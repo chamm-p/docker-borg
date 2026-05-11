@@ -1,0 +1,18 @@
+services:
+  agent:
+    image: ghcr.io/chamm-p/docker-borg-agent:latest
+    container_name: dborg-agent
+    restart: unless-stopped
+    environment:
+      - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
+      - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080
+      - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
+      - DBORG_DOCKER_HOST_DIR=/host/docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /share/Container:/host/docker:ro
+      - agent-data:/data
+    command: ["daemon"]
+
+volumes:
+  agent-data:
