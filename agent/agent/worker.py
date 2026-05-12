@@ -5,7 +5,7 @@ containers. Each worker mounts the target compose containers' volumes via
 --volumes-from and runs borgmatic.
 
 Volume sharing between agent and worker:
-- The agent's data dir (named volume DBORG_AGENT_DATA_VOLUME, mounted at /data
+- The agent's data dir (auto-detected volume, mounted at /data
   in both) carries borgmatic configs, ssh keys, borg cache, etc.
 """
 from __future__ import annotations
@@ -29,8 +29,32 @@ from .models import ContainerInfo, JobResult, LogEntry
 logger = logging.getLogger(__name__)
 
 WORKER_IMAGE = os.environ.get("DBORG_WORKER_IMAGE", "ghcr.io/chamm-p/docker-borg-worker:latest")
-# Name of the docker volume that holds /data both inside agent and worker.
-AGENT_DATA_VOLUME = os.environ.get("DBORG_AGENT_DATA_VOLUME", "agent-data")
+
+
+def _detect_agent_data_volume(docker_client) -> str:
+    """Find the actual docker volume name backing this agent's /data dir.
+
+    Priority:
+      1. DBORG_AGENT_DATA_VOLUME env (manual override)
+      2. Introspect our own container — read Mounts for Destination=/data
+      3. Fallback to literal "agent-data"
+    """
+    override = os.environ.get("DBORG_AGENT_DATA_VOLUME", "").strip()
+    if override:
+        return override
+    try:
+        import socket
+        our_id = socket.gethostname()  # Docker sets this to short container ID
+        me = docker_client.containers.get(our_id)
+        for m in me.attrs.get("Mounts", []):
+            if m.get("Destination") == "/data" and m.get("Type") == "volume":
+                name = m.get("Name")
+                if name:
+                    logger.info("Detected agent-data volume: %s", name)
+                    return name
+    except Exception as e:
+        logger.warning("Could not introspect own container for /data volume: %s", e)
+    return "agent-data"
 
 
 @dataclass
@@ -216,7 +240,7 @@ def _spawn_worker(
         env["DBORG_WEBDAV_PASSWORD"] = settings.webdav_password or ""
         env["DBORG_WEBDAV_VERIFY_SSL"] = "true" if settings.webdav_verify_ssl else "false"
 
-    volumes: dict = {AGENT_DATA_VOLUME: {"bind": "/data", "mode": "rw"}}
+    volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/data", "mode": "rw"}}
     if settings.backup_type == "local" and settings.local_path:
         volumes[settings.local_path] = {"bind": "/mnt/repo", "mode": "rw"}
     if extra_volumes:
