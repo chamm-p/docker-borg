@@ -51,10 +51,17 @@ def update_job_status(
     if not job:
         raise HTTPException(404, "Job not found")
 
+    if job.status == "cancelled" and update.status != "cancelled":
+        for log in update.logs:
+            ts = datetime.fromisoformat(log.timestamp) if log.timestamp else datetime.utcnow()
+            db.add(JobLog(job_id=job.id, level=log.level, message=log.message, timestamp=ts))
+        db.commit()
+        return {"ack": True, "note": "job was cancelled — status not overwritten"}
+
     job.status = update.status
     if update.status == "running":
         job.started_at = datetime.utcnow()
-    elif update.status in ("success", "failed"):
+    elif update.status in ("success", "failed", "cancelled"):
         job.completed_at = datetime.utcnow()
 
     if update.result:

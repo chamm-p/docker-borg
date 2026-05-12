@@ -18,6 +18,7 @@ class CentralClient:
         self._load_token()
         self._http = httpx.Client(base_url=settings.central_url, timeout=30)
         self.manual_paths: dict[str, str] = {}
+        self.cancelled_jobs: set[int] = set()
 
     def _load_token(self):
         if settings.token_file.exists():
@@ -52,6 +53,9 @@ class CentralClient:
         paths = data.get("manual_paths", {})
         if isinstance(paths, dict):
             self.manual_paths = {k: str(v) for k, v in paths.items() if v}
+        cancelled = data.get("cancelled_jobs", [])
+        if isinstance(cancelled, list):
+            self.cancelled_jobs = {int(j) for j in cancelled if isinstance(j, int) or (isinstance(j, str) and j.isdigit())}
         backup = data.get("backup", {})
         if not isinstance(backup, dict):
             return

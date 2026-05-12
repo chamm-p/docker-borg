@@ -145,4 +145,14 @@ def heartbeat(
         for row in db.query(Container).filter(Container.agent_id == agent.id).all()
         if row.manual_compose_dir
     }
-    return HeartbeatResponse(backup=_backup_config(agent), manual_paths=manual_paths)
+    from ..models import Job
+    cancelled_jobs = [
+        j.id for j in db.query(Job).filter(
+            Job.agent_id == agent.id, Job.status == "cancelled"
+        ).all()
+    ]
+    return HeartbeatResponse(
+        backup=_backup_config(agent),
+        manual_paths=manual_paths,
+        cancelled_jobs=cancelled_jobs,
+    )

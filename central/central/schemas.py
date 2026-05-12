@@ -35,6 +35,7 @@ class HeartbeatResponse(BaseModel):
     ack: bool = True
     backup: BackupConfig = BackupConfig()
     manual_paths: dict[str, str] = {}
+    cancelled_jobs: list[int] = []
 
 
 class ContainerPayload(BaseModel):

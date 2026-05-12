@@ -32,17 +32,48 @@ def _borg_env() -> dict[str, str]:
     return env
 
 
+_active_proc: subprocess.Popen | None = None
+
+
+def cancel_active() -> bool:
+    """Kill the currently running borg subprocess, if any. Returns True if a process was killed."""
+    global _active_proc
+    proc = _active_proc
+    if proc is None:
+        return False
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except OSError:
+        pass
+    return True
+
+
 def _run_borg(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
+    global _active_proc
     cmd = ["borg"] + args
     logger.debug("Running: %s", " ".join(cmd))
-    return subprocess.run(
+    proc = subprocess.Popen(
         cmd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         env=_borg_env(),
         cwd=cwd,
-        timeout=3600,
     )
+    _active_proc = proc
+    try:
+        stdout, stderr = proc.communicate(timeout=3600)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        return subprocess.CompletedProcess(cmd, returncode=124, stdout=stdout, stderr=stderr + "\nTimeout after 3600s")
+    finally:
+        _active_proc = None
+    return subprocess.CompletedProcess(cmd, returncode=proc.returncode, stdout=stdout, stderr=stderr)
 
 
 def _host_path_to_local(host_path: str) -> Path:

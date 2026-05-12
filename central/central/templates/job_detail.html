@@ -12,7 +12,18 @@
             {% if job.completed_at %}<span><i class="bi bi-check2 me-1"></i> {{ job.completed_at|localtime }}</span>{% endif %}
         </div>
     </div>
-    <a href="javascript:history.back()" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Zurück</a>
+    <div class="d-flex gap-2">
+        {% if job.status in ('pending', 'running') %}
+        <form method="post" action="/jobs/{{ job.id }}/cancel" onsubmit="return confirm('Job #{{ job.id }} abbrechen?')">
+            <button type="submit" class="btn btn-outline-warning"><i class="bi bi-stop-circle me-1"></i>Abbrechen</button>
+        </form>
+        {% else %}
+        <form method="post" action="/jobs/{{ job.id }}/delete" onsubmit="return confirm('Job #{{ job.id }} löschen?')">
+            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i>Löschen</button>
+        </form>
+        {% endif %}
+        <a href="javascript:history.back()" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Zurück</a>
+    </div>
 </div>
 
 <div class="card">

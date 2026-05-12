@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 from .config import settings
 from .discovery import discover_containers, _host_path_to_local, _collect_root_files
-from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo, verify_repo
+from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo, verify_repo, cancel_active
 from .client import CentralClient
 from .models import JobType
 from .webdav import ensure_mounted, unmount
@@ -92,6 +92,9 @@ def cmd_daemon(args):
             try:
                 jobs = client.poll_jobs()
                 for job in jobs:
+                    if job.job_id in client.cancelled_jobs:
+                        client.report_job(job.job_id, "cancelled", logs=[LogEntry("warning", "Job vor Start abgebrochen")])
+                        continue
                     client.report_job(job.job_id, "running")
                     ok, detail = ensure_mounted()
                     if not ok:
@@ -103,9 +106,26 @@ def cmd_daemon(args):
                         continue
                     if detail:
                         client.report_job(job.job_id, "running", logs=[LogEntry("info", detail)])
-                    with last_containers_lock:
-                        containers_for_job = list(last_containers)
-                    _execute_job(job, containers_for_job, client)
+
+                    cancel_watchdog_stop = threading.Event()
+
+                    def watchdog():
+                        while not cancel_watchdog_stop.wait(2):
+                            if job.job_id in client.cancelled_jobs:
+                                logger.warning("Cancellation signal for job %d — killing active borg process", job.job_id)
+                                cancel_active()
+                                return
+
+                    wd = threading.Thread(target=watchdog, daemon=True, name=f"cancel-watchdog-{job.job_id}")
+                    wd.start()
+
+                    try:
+                        with last_containers_lock:
+                            containers_for_job = list(last_containers)
+                        _execute_job(job, containers_for_job, client)
+                    finally:
+                        cancel_watchdog_stop.set()
+                        wd.join(timeout=3)
             except Exception:
                 logger.exception("Worker loop error")
             for _ in range(settings.poll_interval):
@@ -170,6 +190,10 @@ def _execute_job(job, containers, client: CentralClient):
             all_success = True
             backed_up = 0
             for c in targets:
+                if job.job_id in client.cancelled_jobs:
+                    stream("warning", "Job-Abbruch erkannt — restliche Projekte werden übersprungen")
+                    all_success = False
+                    break
                 manual = overrides.get(c.compose_project)
                 if manual:
                     c.compose_dir = manual
@@ -192,9 +216,13 @@ def _execute_job(job, containers, client: CentralClient):
                 else:
                     all_success = False
 
-            stream("info", f"Backup abgeschlossen: {backed_up}/{len(targets)} erfolgreich")
-            status = "success" if all_success and backed_up > 0 else "failed"
-            client.report_job(job.job_id, status)
+            if job.job_id in client.cancelled_jobs:
+                stream("warning", "Backup wurde abgebrochen")
+                client.report_job(job.job_id, "cancelled")
+            else:
+                stream("info", f"Backup abgeschlossen: {backed_up}/{len(targets)} erfolgreich")
+                status = "success" if all_success and backed_up > 0 else "failed"
+                client.report_job(job.job_id, status)
 
         elif job.job_type == JobType.PRUNE:
             keep = job.params.get("keep", {})

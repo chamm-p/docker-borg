@@ -356,13 +356,78 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db)):
     return RedirectResponse("/", status_code=303)
 
 
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        return HTMLResponse("Job nicht gefunden", status_code=404)
+    if job.status in ("pending", "running"):
+        job.status = "cancelled"
+        if not job.completed_at:
+            job.completed_at = datetime.utcnow()
+        db.add(JobLog(
+            job_id=job.id,
+            level="warning",
+            message="Job abgebrochen via Web-UI",
+        ))
+        db.commit()
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.post("/jobs/{job_id}/delete")
+def delete_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        return HTMLResponse("Job nicht gefunden", status_code=404)
+    agent_id = job.agent_id
+    db.delete(job)
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=jobs", status_code=303)
+
+
+@router.post("/jobs/cleanup")
+def cleanup_jobs(
+    status: str = Form("done"),
+    db: Session = Depends(get_db),
+):
+    if status == "done":
+        targets = ("success", "failed", "cancelled")
+    elif status == "failed":
+        targets = ("failed",)
+    elif status == "cancelled":
+        targets = ("cancelled",)
+    else:
+        targets = ()
+    if targets:
+        db.query(Job).filter(Job.status.in_(targets)).delete(synchronize_session=False)
+        db.commit()
+    return RedirectResponse("/jobs", status_code=303)
+
+
 @router.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, db: Session = Depends(get_db)):
-    jobs = db.query(Job).order_by(Job.created_at.desc()).limit(100).all()
+def jobs_page(
+    request: Request,
+    status: str = "",
+    db: Session = Depends(get_db),
+):
+    q = db.query(Job).order_by(Job.created_at.desc())
+    if status:
+        q = q.filter(Job.status == status)
+    jobs = q.limit(200).all()
     agents = {a.id: a for a in db.query(Agent).all()}
+    counts = {
+        "all": db.query(Job).count(),
+        "running": db.query(Job).filter(Job.status == "running").count(),
+        "pending": db.query(Job).filter(Job.status == "pending").count(),
+        "success": db.query(Job).filter(Job.status == "success").count(),
+        "failed": db.query(Job).filter(Job.status == "failed").count(),
+        "cancelled": db.query(Job).filter(Job.status == "cancelled").count(),
+    }
     return templates.TemplateResponse(request, "jobs.html", {
         "jobs": jobs,
         "agents": agents,
+        "status_filter": status,
+        "counts": counts,
     })
 
 

@@ -1,24 +1,57 @@
 {% extends "base.html" %}
 {% block title %}Jobs – docker-borg{% endblock %}
 {% block content %}
-<h1 class="h3 mb-4"><i class="bi bi-list-check me-2 text-primary"></i>Jobs</h1>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <h1 class="h3 mb-0"><i class="bi bi-list-check me-2 text-primary"></i>Jobs</h1>
+    <div class="btn-group">
+        <form method="post" action="/jobs/cleanup" onsubmit="return confirm('Alle erledigten Jobs löschen (success/failed/cancelled)?')">
+            <input type="hidden" name="status" value="done">
+            <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-trash me-1"></i>Erledigte löschen ({{ counts.success + counts.failed + counts.cancelled }})</button>
+        </form>
+        <form method="post" action="/jobs/cleanup" onsubmit="return confirm('Alle fehlgeschlagenen Jobs löschen?')">
+            <input type="hidden" name="status" value="failed">
+            <button class="btn btn-outline-danger btn-sm" type="submit" {% if counts.failed == 0 %}disabled{% endif %}><i class="bi bi-trash me-1"></i>Nur fehlgeschlagene ({{ counts.failed }})</button>
+        </form>
+    </div>
+</div>
+
+<ul class="nav nav-pills mb-4 flex-wrap gap-1">
+    <li class="nav-item"><a class="nav-link {% if not status_filter %}active{% endif %}" href="/jobs">Alle ({{ counts.all }})</a></li>
+    <li class="nav-item"><a class="nav-link {% if status_filter == 'running' %}active{% endif %}" href="/jobs?status=running">Laufend ({{ counts.running }})</a></li>
+    <li class="nav-item"><a class="nav-link {% if status_filter == 'pending' %}active{% endif %}" href="/jobs?status=pending">Wartend ({{ counts.pending }})</a></li>
+    <li class="nav-item"><a class="nav-link {% if status_filter == 'success' %}active{% endif %}" href="/jobs?status=success">Erfolg ({{ counts.success }})</a></li>
+    <li class="nav-item"><a class="nav-link {% if status_filter == 'failed' %}active{% endif %}" href="/jobs?status=failed">Fehlgeschlagen ({{ counts.failed }})</a></li>
+    <li class="nav-item"><a class="nav-link {% if status_filter == 'cancelled' %}active{% endif %}" href="/jobs?status=cancelled">Abgebrochen ({{ counts.cancelled }})</a></li>
+</ul>
 
 {% if jobs %}
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
-            <thead class="table-light"><tr><th>ID</th><th>Agent</th><th>Typ</th><th>Status</th><th>Erstellt</th><th>Abgeschlossen</th><th>Dauer</th><th></th></tr></thead>
+            <thead class="table-light"><tr><th>ID</th><th>Agent</th><th>Typ</th><th>Status</th><th>Erstellt</th><th>Dauer</th><th class="text-end">Aktionen</th></tr></thead>
             <tbody>
                 {% for j in jobs %}
                 <tr>
                     <td>#{{ j.id }}</td>
                     <td>{% if agents.get(j.agent_id) %}<a href="/agents/{{ j.agent_id }}">{{ agents[j.agent_id].hostname }}</a>{% else %}<span class="text-muted">?</span>{% endif %}</td>
                     <td>{{ j.job_type }}</td>
-                    <td><span class="badge text-bg-{{ 'success' if j.status == 'success' else 'danger' if j.status == 'failed' else 'warning' if j.status == 'pending' else 'info' }}">{{ j.status }}</span></td>
+                    <td><span class="badge text-bg-{{ 'success' if j.status == 'success' else 'danger' if j.status == 'failed' else 'warning' if j.status == 'pending' else 'secondary' if j.status == 'cancelled' else 'info' }}">{{ j.status }}</span></td>
                     <td class="text-muted small">{{ j.created_at|localtime }}</td>
-                    <td class="text-muted small">{{ j.completed_at|localtime if j.completed_at else '—' }}</td>
                     <td class="text-muted small">{% if j.started_at and j.completed_at %}{{ (j.completed_at - j.started_at).total_seconds()|round(1) }}s{% else %}—{% endif %}</td>
-                    <td><a href="/jobs/{{ j.id }}" class="btn btn-sm btn-outline-secondary">Details</a></td>
+                    <td class="text-end">
+                        <div class="d-flex gap-1 justify-content-end">
+                            <a href="/jobs/{{ j.id }}" class="btn btn-sm btn-outline-secondary">Details</a>
+                            {% if j.status in ('pending', 'running') %}
+                            <form method="post" action="/jobs/{{ j.id }}/cancel" onsubmit="return confirm('Job #{{ j.id }} abbrechen?')">
+                                <button class="btn btn-sm btn-outline-warning" type="submit" title="Abbrechen"><i class="bi bi-stop-circle"></i></button>
+                            </form>
+                            {% else %}
+                            <form method="post" action="/jobs/{{ j.id }}/delete" onsubmit="return confirm('Job #{{ j.id }} löschen?')">
+                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Löschen"><i class="bi bi-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -28,7 +61,7 @@
 {% else %}
 <div class="text-center py-5 my-4 border rounded bg-body-tertiary">
     <i class="bi bi-list-check display-4 text-muted"></i>
-    <p class="text-muted mt-3 mb-0">Noch keine Jobs vorhanden.</p>
+    <p class="text-muted mt-3 mb-0">Keine Jobs in dieser Ansicht.</p>
 </div>
 {% endif %}
 {% endblock %}
