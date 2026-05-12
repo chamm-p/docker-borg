@@ -47,21 +47,49 @@ def ensure_mounted() -> tuple[bool, str]:
     )
     secrets_file.chmod(0o600)
 
-    result = subprocess.run(
-        [
-            "mount", "-t", "davfs",
-            "-o", f"conf={DAVFS_CONF},secrets={secrets_file}",
-            settings.webdav_url,
-            str(mount_point),
-        ],
-        capture_output=True,
-        text=True,
-    )
+    Path("/etc/mtab").parent.mkdir(parents=True, exist_ok=True)
+    if not Path("/etc/mtab").exists():
+        try:
+            Path("/etc/mtab").symlink_to("/proc/self/mounts")
+        except OSError:
+            pass
+
+    cmd = [
+        "mount.davfs",
+        "-o", f"conf={DAVFS_CONF},secrets={secrets_file},uid=0,gid=0",
+        settings.webdav_url,
+        str(mount_point),
+    ]
+    logger.info("Running: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "davfs2-Mount: Timeout nach 60s (Server antwortet nicht)"
+
+    combined = "\n".join(p for p in (result.stderr, result.stdout) if p and p.strip())
 
     if result.returncode != 0:
-        err = (result.stderr or result.stdout or "(keine Ausgabe)").strip()
+        log_extra = ""
+        for log_path in ("/var/log/davfs2.log", "/tmp/davfs2.log"):
+            try:
+                tail = Path(log_path).read_text().splitlines()[-20:]
+                if tail:
+                    log_extra = "\n" + "\n".join(tail)
+                    break
+            except OSError:
+                continue
+        err = (combined + log_extra).strip() or f"davfs2 exit code {result.returncode}, keine Diagnose-Ausgabe"
         logger.error("WebDAV mount failed: %s", err)
-        return False, f"davfs2-Mount fehlgeschlagen: {err}"
+        return False, f"davfs2-Mount fehlgeschlagen:\n{err}"
+
+    if not _is_mounted(mount_point):
+        return False, f"davfs2-Mount: Returncode 0, aber {mount_point} ist nicht gemountet. Ausgabe: {combined or '(leer)'}"
 
     logger.info("WebDAV mounted: %s -> %s", settings.webdav_url, mount_point)
     _mounted = True

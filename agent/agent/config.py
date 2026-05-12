@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     agent_name: str = ""
     central_url: str = "http://central:8080"
     registration_token: str = ""
-    poll_interval: int = 30
+    poll_interval: int = 5
 
     backup_type: str = "scp"
     borg_repo: str = ""

@@ -303,7 +303,8 @@ def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
     )
     db.add(job)
     db.commit()
-    return RedirectResponse(f"/agents/{agent_id}?tab=jobs", status_code=303)
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
 @router.post("/agents/{agent_id}/restore")

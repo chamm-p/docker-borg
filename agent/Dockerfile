@@ -4,7 +4,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends borgbackup openssh-client davfs2 tzdata openssl \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /mnt/webdav \
-    && echo "use_locks 0" >> /etc/davfs2/davfs2.conf
+    && printf "use_locks 0\nask_auth 0\nprecheck 0\nif_match_bug 1\n" >> /etc/davfs2/davfs2.conf
 
 WORKDIR /app
 COPY requirements.txt .
