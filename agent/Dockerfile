@@ -19,5 +19,10 @@ COPY agent/ agent/
 
 RUN mkdir -p /data
 
+# Reduce glibc malloc fragmentation — keeps RSS low for long-running daemon
+ENV MALLOC_ARENA_MAX=2
+# Don't buffer stdout/stderr — faster log visibility, no orphan buffers
+ENV PYTHONUNBUFFERED=1
+
 ENTRYPOINT ["python", "-m", "agent.main"]
 CMD ["daemon"]

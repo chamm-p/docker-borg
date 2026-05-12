@@ -9,6 +9,12 @@ services:
       - /dev/fuse
     security_opt:
       - apparmor=unconfined
+    # Harte Speichergrenze — auf Inferenz-Servern wichtig damit der Agent
+    # niemals Speicher für Modelle wegfrisst. 256m ist großzügig (Peak im
+    # Test bei 500MB-Backup: 44 MB RSS). Bei OOM tötet der Kernel den
+    # Container; restart=unless-stopped startet ihn neu.
+    mem_limit: 256m
+    memswap_limit: 256m
     environment:
       - TZ=Europe/Zurich
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
