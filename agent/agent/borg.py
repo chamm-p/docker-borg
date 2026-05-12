@@ -131,8 +131,9 @@ def _mount_label(m: dict) -> str:
 
 
 def _extract_container_mount(docker_client, ctr_name: str, dest: str, target_dir: Path) -> tuple[bool, str]:
-    import tarfile
-    import io
+    """Streams Volume-Daten aus dem Container in target_dir via docker.get_archive() → tar.
+    Daten werden direkt an `tar -xf -` weitergereicht; RAM-Verbrauch bleibt konstant
+    unabhängig von der Volume-Größe."""
     try:
         containers = docker_client.containers.list(all=True, filters={"name": ctr_name})
         ctr = next((c for c in containers if c.name == ctr_name), None)
@@ -142,15 +143,39 @@ def _extract_container_mount(docker_client, ctr_name: str, dest: str, target_dir
     except Exception as e:
         return False, f"docker get_archive {ctr_name}:{dest} fehlgeschlagen: {e}"
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    proc = subprocess.Popen(
+        ["tar", "-xf", "-", "-C", str(target_dir)],
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     try:
-        buf = io.BytesIO()
         for chunk in bits:
-            buf.write(chunk)
-        buf.seek(0)
-        with tarfile.open(fileobj=buf, mode="r") as tf:
-            tf.extractall(target_dir)
+            if not chunk:
+                continue
+            try:
+                proc.stdin.write(chunk)
+            except BrokenPipeError:
+                break
+        try:
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+        try:
+            proc.wait(timeout=3600)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            return False, f"tar-Extraktion {ctr_name}:{dest}: Timeout"
+        if proc.returncode != 0:
+            err = proc.stderr.read().decode("utf-8", "replace").strip() if proc.stderr else ""
+            return False, f"tar-Extraktion {ctr_name}:{dest} fehlgeschlagen: {err or f'exit {proc.returncode}'}"
     except Exception as e:
-        return False, f"tar-Extraktion {ctr_name}:{dest} fehlgeschlagen: {e}"
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return False, f"tar-Extraktion {ctr_name}:{dest}: {e}"
     return True, ""
 
 
