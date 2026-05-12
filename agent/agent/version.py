@@ -1,2 +1,2 @@
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 AGENT_VERSION = __version__
