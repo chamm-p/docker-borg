@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from .config import settings
 
@@ -11,8 +11,29 @@ logger = logging.getLogger(__name__)
 
 _mounted = False
 
-DAVFS_CERTS_DIR = Path("/etc/davfs2/certs")
-DAVFS_CONF = Path("/etc/davfs2/davfs2.conf")
+RCLONE_CONFIG_DIR = Path("/tmp/rclone")
+
+
+def _obscure(password: str) -> str:
+    result = subprocess.run(
+        ["rclone", "obscure", password],
+        capture_output=True, text=True, timeout=10,
+    )
+    return result.stdout.strip()
+
+
+def _write_config(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    obscured = _obscure(settings.webdav_password or "")
+    path.write_text(
+        "[webdav]\n"
+        "type = webdav\n"
+        f"url = {settings.webdav_url}\n"
+        "vendor = other\n"
+        f"user = {settings.webdav_user}\n"
+        f"pass = {obscured}\n"
+    )
+    path.chmod(0o600)
 
 
 def ensure_mounted() -> tuple[bool, str]:
@@ -32,34 +53,32 @@ def ensure_mounted() -> tuple[bool, str]:
         _mounted = True
         return True, f"WebDAV bereits gemountet unter {mount_point}"
 
-    cert_info = ""
+    config_path = RCLONE_CONFIG_DIR / "rclone.conf"
+    _write_config(config_path)
+
+    probe_cmd = ["rclone", "--config", str(config_path), "lsd", "webdav:"]
     if not settings.webdav_verify_ssl:
-        cert_path = _fetch_server_cert(settings.webdav_url)
-        if cert_path:
-            _set_servercert_in_conf(cert_path)
-            cert_info = " (selbst-signiertes Zertifikat akzeptiert)"
-        else:
-            return False, "SSL-Zertifikat konnte nicht via openssl s_client geholt werden"
-
-    secrets_file = Path("/tmp/davfs2-secrets")
-    secrets_file.write_text(
-        f"{settings.webdav_url} {settings.webdav_user} {settings.webdav_password}\n"
-    )
-    secrets_file.chmod(0o600)
-
-    Path("/etc/mtab").parent.mkdir(parents=True, exist_ok=True)
-    if not Path("/etc/mtab").exists():
-        try:
-            Path("/etc/mtab").symlink_to("/proc/self/mounts")
-        except OSError:
-            pass
+        probe_cmd.append("--no-check-certificate")
+    try:
+        probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return False, "rclone-Verbindungsprüfung: Timeout nach 30s (Server antwortet nicht)"
+    if probe.returncode != 0:
+        err = (probe.stderr or probe.stdout or "").strip() or f"exit {probe.returncode}"
+        return False, f"WebDAV-Verbindung fehlgeschlagen (vor Mount):\n{err}"
 
     cmd = [
-        "mount.davfs",
-        "-o", f"conf={DAVFS_CONF},secrets={secrets_file},uid=0,gid=0",
-        settings.webdav_url,
-        str(mount_point),
+        "rclone",
+        "--config", str(config_path),
+        "mount", "webdav:", str(mount_point),
+        "--daemon",
+        "--allow-other",
+        "--vfs-cache-mode", "writes",
+        "--dir-cache-time", "5s",
     ]
+    if not settings.webdav_verify_ssl:
+        cmd.append("--no-check-certificate")
+
     logger.info("Running: %s", " ".join(cmd))
     try:
         result = subprocess.run(
@@ -70,34 +89,30 @@ def ensure_mounted() -> tuple[bool, str]:
             timeout=60,
         )
     except subprocess.TimeoutExpired:
-        return False, "davfs2-Mount: Timeout nach 60s (Server antwortet nicht)"
+        return False, "rclone mount: Timeout nach 60s (Server antwortet nicht)"
 
-    combined = "\n".join(p for p in (result.stderr, result.stdout) if p and p.strip())
+    combined = "\n".join(p for p in (result.stderr, result.stdout) if p and p.strip()).strip()
 
     if result.returncode != 0:
-        log_extra = ""
-        for log_path in ("/var/log/davfs2.log", "/tmp/davfs2.log"):
-            try:
-                tail = Path(log_path).read_text().splitlines()[-20:]
-                if tail:
-                    log_extra = "\n" + "\n".join(tail)
-                    break
-            except OSError:
-                continue
-        err = (combined + log_extra).strip() or f"davfs2 exit code {result.returncode}, keine Diagnose-Ausgabe"
-        logger.error("WebDAV mount failed: %s", err)
-        return False, f"davfs2-Mount fehlgeschlagen:\n{err}"
+        msg = combined or f"rclone exit code {result.returncode}, keine Ausgabe"
+        logger.error("rclone mount failed: %s", msg)
+        return False, f"rclone-Mount fehlgeschlagen:\n{msg}"
 
-    if not _is_mounted(mount_point):
-        return False, f"davfs2-Mount: Returncode 0, aber {mount_point} ist nicht gemountet. Ausgabe: {combined or '(leer)'}"
+    for _ in range(20):
+        if _is_mounted(mount_point):
+            break
+        time.sleep(0.25)
+    else:
+        return False, f"rclone exit OK, aber {mount_point} ist nicht gemountet. Ausgabe: {combined or '(leer)'}"
 
+    insecure_info = " (SSL-Verifikation deaktiviert)" if not settings.webdav_verify_ssl else ""
     logger.info("WebDAV mounted: %s -> %s", settings.webdav_url, mount_point)
     _mounted = True
 
     if not settings.borg_repo:
         settings.borg_repo = str(mount_point / "borg")
 
-    return True, f"WebDAV gemountet: {settings.webdav_url} → {mount_point}{cert_info}"
+    return True, f"WebDAV gemountet via rclone: {settings.webdav_url} → {mount_point}{insecure_info}"
 
 
 def unmount():
@@ -105,7 +120,12 @@ def unmount():
     if not _mounted:
         return
     mount_point = Path(settings.webdav_mount)
-    subprocess.run(["umount", str(mount_point)], capture_output=True)
+    for cmd in (["fusermount3", "-u", str(mount_point)],
+                ["fusermount", "-u", str(mount_point)],
+                ["umount", str(mount_point)]):
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode == 0:
+            break
     _mounted = False
     logger.info("WebDAV unmounted: %s", mount_point)
 
@@ -117,58 +137,3 @@ def _is_mounted(path: Path) -> bool:
     except FileNotFoundError:
         result = subprocess.run(["mount"], capture_output=True, text=True)
         return str(path) in result.stdout
-
-
-def _fetch_server_cert(url: str) -> Path | None:
-    parsed = urlparse(url)
-    if parsed.scheme != "https":
-        return None
-    host = parsed.hostname
-    port = parsed.port or 443
-    if not host:
-        return None
-
-    DAVFS_CERTS_DIR.mkdir(parents=True, exist_ok=True)
-    cert_file = DAVFS_CERTS_DIR / f"{host}.pem"
-
-    try:
-        result = subprocess.run(
-            ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host, "-showcerts"],
-            input="",
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        logger.error("Cannot fetch server cert via openssl: %s", e)
-        return None
-
-    output = result.stdout
-    pem_blocks: list[str] = []
-    in_block = False
-    current: list[str] = []
-    for line in output.splitlines():
-        if "BEGIN CERTIFICATE" in line:
-            in_block = True
-            current = [line]
-        elif "END CERTIFICATE" in line and in_block:
-            current.append(line)
-            pem_blocks.append("\n".join(current))
-            in_block = False
-        elif in_block:
-            current.append(line)
-
-    if not pem_blocks:
-        logger.error("No certificate found for %s:%d", host, port)
-        return None
-
-    cert_file.write_text("\n".join(pem_blocks) + "\n")
-    cert_file.chmod(0o644)
-    return cert_file
-
-
-def _set_servercert_in_conf(cert_path: Path) -> None:
-    text = DAVFS_CONF.read_text() if DAVFS_CONF.exists() else ""
-    lines = [l for l in text.splitlines() if not l.strip().startswith("servercert ")]
-    lines.append(f"servercert {cert_path}")
-    DAVFS_CONF.write_text("\n".join(lines) + "\n")

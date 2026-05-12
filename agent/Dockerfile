@@ -1,10 +1,14 @@
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends borgbackup openssh-client davfs2 tzdata openssl \
+    && apt-get install -y --no-install-recommends borgbackup openssh-client tzdata openssl fuse3 ca-certificates curl unzip \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /mnt/webdav \
-    && printf "use_locks 0\nask_auth 0\nprecheck 0\nif_match_bug 1\n" >> /etc/davfs2/davfs2.conf
+    && ARCH="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://downloads.rclone.org/rclone-current-linux-${ARCH}.zip" -o /tmp/rclone.zip \
+    && unzip -j /tmp/rclone.zip "*/rclone" -d /usr/local/bin/ \
+    && chmod +x /usr/local/bin/rclone \
+    && rm /tmp/rclone.zip \
+    && mkdir -p /mnt/webdav
 
 WORKDIR /app
 COPY requirements.txt .
