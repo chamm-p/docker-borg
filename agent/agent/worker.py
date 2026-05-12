@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 WORKER_IMAGE = os.environ.get("DBORG_WORKER_IMAGE", "ghcr.io/chamm-p/docker-borg-worker:latest")
 
 
+def ensure_worker_image_fresh(docker_client) -> None:
+    """Pull the worker image so we never run stale code from a cached layer."""
+    try:
+        on_start = time.time()
+        logger.info("Ziehe Worker-Image %s...", WORKER_IMAGE)
+        docker_client.images.pull(WORKER_IMAGE)
+        logger.info("Worker-Image aktualisiert in %.1fs", time.time() - on_start)
+    except Exception as e:
+        logger.warning("Konnte Worker-Image nicht pullen (%s) — nutze lokal gecachtes", e)
+
+
 def _detect_agent_data_volume(docker_client) -> str:
     """Find the actual docker volume name backing this agent's /data dir.
 

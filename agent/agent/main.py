@@ -84,6 +84,17 @@ def cmd_daemon(args):
                 except Exception:
                     pass
 
+    # Worker-Image beim Start frisch pullen (Cache umgehen)
+    try:
+        import docker as _docker
+        _wc = _docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+        try:
+            worker.ensure_worker_image_fresh(_wc)
+        finally:
+            _wc.close()
+    except Exception as e:
+        logger.warning("Worker-Image-Refresh fehlgeschlagen: %s", e)
+
     client = CentralClient()
 
     if not client.is_registered:
