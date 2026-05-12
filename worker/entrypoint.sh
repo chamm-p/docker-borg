@@ -73,7 +73,7 @@ case "$MODE" in
                 echo "Repository initialisiert."
             fi
         fi
-        exec borgmatic --config "$CFG" --stats -v 1 create "$@"
+        exec borgmatic --config "$CFG" --stats -v 1 --progress create "$@"
         ;;
     check)   exec borgmatic --config "$CFG" --stats -v 1 check  "$@" ;;
     prune)   exec borgmatic --config "$CFG" --stats -v 1 prune  "$@" ;;
