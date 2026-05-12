@@ -80,9 +80,9 @@ def agent_detail(
         c._files = json.loads(c.root_files) if c.root_files else []
         c._sicherbar = bool(c.compose_dir and c._files)
         try:
-            c._named_volumes = json.loads(c.named_volumes) if c.named_volumes else []
+            c._backup_mounts = json.loads(c.backup_mounts) if c.backup_mounts else []
         except (json.JSONDecodeError, TypeError):
-            c._named_volumes = []
+            c._backup_mounts = []
 
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
     schedules = db.query(Schedule).filter(Schedule.agent_id == agent_id).all()

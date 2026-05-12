@@ -61,6 +61,7 @@ class Container(Base):
     has_volumes: Mapped[bool] = mapped_column(Boolean, default=False)
     compose_dir_accessible: Mapped[bool] = mapped_column(Boolean, default=False)
     named_volumes: Mapped[str] = mapped_column(Text, default="[]")
+    backup_mounts: Mapped[str] = mapped_column(Text, default="[]")
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

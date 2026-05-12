@@ -80,8 +80,9 @@ def _run_borg(args: list[str], cwd: str | None = None) -> subprocess.CompletedPr
 
 
 def _host_path_to_local(host_path: str) -> Path:
-    host_dir = settings.docker_host_dir
-    return Path(host_dir) / Path(host_path).name
+    # Delegate to the discovery module's mapper (3-step resolution chain)
+    from .discovery import _host_path_to_local as _map
+    return _map(host_path)
 
 
 def init_repo() -> bool:
@@ -119,87 +120,143 @@ def _build_excludes() -> list[str]:
 DEFAULT_EXCLUDES = _build_excludes()
 
 
+def _mount_label(m: dict) -> str:
+    mtype = m.get("type", "")
+    name = m.get("name", "")
+    source = m.get("source", "")
+    if mtype == "volume" and name:
+        return f"volume-{name}"
+    return f"bind-{source.lstrip('/').replace('/', '_').replace(' ', '_') or 'root'}"
+
+
+def _extract_container_mount(docker_client, ctr_name: str, dest: str, target_dir: Path) -> tuple[bool, str]:
+    import tarfile
+    import io
+    try:
+        containers = docker_client.containers.list(all=True, filters={"name": ctr_name})
+        ctr = next((c for c in containers if c.name == ctr_name), None)
+        if not ctr:
+            return False, f"Container '{ctr_name}' nicht gefunden"
+        bits, _stat = ctr.get_archive(dest)
+    except Exception as e:
+        return False, f"docker get_archive {ctr_name}:{dest} fehlgeschlagen: {e}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        buf = io.BytesIO()
+        for chunk in bits:
+            buf.write(chunk)
+        buf.seek(0)
+        with tarfile.open(fileobj=buf, mode="r") as tf:
+            tf.extractall(target_dir)
+    except Exception as e:
+        return False, f"tar-Extraktion {ctr_name}:{dest} fehlgeschlagen: {e}"
+    return True, ""
+
+
 def create_backup(container: ContainerInfo) -> BorgResult:
+    import shutil
+    import tempfile
+    import docker
+
     logs: list[LogEntry] = []
     start = time.time()
 
-    compose_dir_local = _host_path_to_local(container.compose_dir)
-    if not compose_dir_local.is_dir():
-        msg = f"Compose dir not accessible: {compose_dir_local}"
-        logger.error(msg)
-        return BorgResult(success=False, job_result=JobResult(), logs=[LogEntry("error", msg)])
-
     archive_name = f"{settings.agent_name}-{container.compose_project}-{datetime.utcnow().strftime('%Y%m%dT%H%M%S')}"
     logs.append(LogEntry("info", f"Starte Backup: {archive_name}"))
-    logs.append(LogEntry("info", f"Compose-Verzeichnis: {compose_dir_local}"))
 
-    extra_sources: list[str] = []
-    skipped_volumes: list[str] = []
-    for v in (container.named_volumes or []):
-        src = v.get("source") or ""
-        name = v.get("name") or ""
-        if not src:
-            continue
-        p = Path(src)
-        if p.is_dir():
-            extra_sources.append(str(p))
-            logs.append(LogEntry("info", f"Named Volume: {name} → {src}"))
+    staging_root = Path("/data/staging")
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f"{container.compose_project}-", dir=staging_root))
+
+    try:
+        # 1. Compose-Verzeichnis kopieren
+        compose_dir_local = _host_path_to_local(container.compose_dir)
+        if compose_dir_local.is_dir():
+            try:
+                shutil.copytree(
+                    compose_dir_local, staging / "compose",
+                    symlinks=True, ignore_dangling_symlinks=True,
+                )
+                logs.append(LogEntry("info", f"Compose-Verzeichnis kopiert ({compose_dir_local})"))
+            except Exception as e:
+                logs.append(LogEntry("warning", f"Compose-Dir-Kopie unvollständig: {e}"))
         else:
-            skipped_volumes.append(f"{name} ({src})")
+            logs.append(LogEntry("warning", f"Compose-Dir nicht zugreifbar: {container.compose_dir}"))
 
-    if skipped_volumes:
-        logs.append(LogEntry("warning", f"Volume-Daten nicht zugreifbar (Mount fehlt im Agent?): {', '.join(skipped_volumes)}"))
+        # 2. Container-Mounts per Docker-API extrahieren (Named Volumes + externe Bind-Mounts)
+        if container.backup_mounts:
+            docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+            try:
+                mounts_dir = staging / "mounts"
+                mounts_dir.mkdir()
+                for m in container.backup_mounts:
+                    label = _mount_label(m)
+                    dest = m.get("dest", "")
+                    ctr_name = m.get("container", "")
+                    target = mounts_dir / label
+                    logs.append(LogEntry("info", f"Extrahiere {m.get('type')}: {label} (aus {ctr_name}:{dest})"))
+                    ok, err = _extract_container_mount(docker_client, ctr_name, dest, target)
+                    if not ok:
+                        logs.append(LogEntry("error", err))
+            finally:
+                docker_client.close()
 
-    exclude_args: list[str] = []
-    for pattern in DEFAULT_EXCLUDES:
-        exclude_args.extend(["--exclude", pattern])
+        # 3. Borg create vom Staging-Verzeichnis aus
+        exclude_args: list[str] = []
+        for pattern in DEFAULT_EXCLUDES:
+            exclude_args.extend(["--exclude", pattern])
+        create_args = ["create", "--json", "--stats"] + exclude_args + [f"::{archive_name}", "."]
 
-    create_args = ["create", "--json", "--stats"] + exclude_args + [f"::{archive_name}", "."] + extra_sources
+        def _attempt() -> subprocess.CompletedProcess:
+            return _run_borg(create_args, cwd=str(staging))
 
-    def _attempt() -> subprocess.CompletedProcess:
-        return _run_borg(create_args, cwd=str(compose_dir_local))
-
-    result = _attempt()
-
-    if result.returncode != 0 and "repository" in (result.stderr or "").lower() and "does not exist" in (result.stderr or "").lower():
-        logs.append(LogEntry("info", "Repository nicht vorhanden, wird initialisiert..."))
-        if not init_repo():
-            logs.append(LogEntry("error", "Failed to initialize repository"))
-            return BorgResult(success=False, job_result=JobResult(), logs=logs)
         result = _attempt()
 
-    retries = 0
-    max_retries = 2
-    while result.returncode != 0 and retries < max_retries:
-        combined = (result.stderr or "") + (result.stdout or "")
-        if "Input/output error" in combined or "Transport endpoint" in combined or "Connection reset" in combined:
-            retries += 1
-            logs.append(LogEntry("warning", f"I/O-Fehler beim Backup, Versuch {retries+1}/{max_retries+1} in 10s..."))
-            time.sleep(10)
+        if result.returncode != 0 and "repository" in (result.stderr or "").lower() and "does not exist" in (result.stderr or "").lower():
+            logs.append(LogEntry("info", "Repository nicht vorhanden, wird initialisiert..."))
+            if not init_repo():
+                logs.append(LogEntry("error", "Failed to initialize repository"))
+                return BorgResult(success=False, job_result=JobResult(), logs=logs)
             result = _attempt()
-        else:
-            break
 
-    duration = time.time() - start
+        retries = 0
+        max_retries = 2
+        while result.returncode != 0 and retries < max_retries:
+            combined = (result.stderr or "") + (result.stdout or "")
+            if "Input/output error" in combined or "Transport endpoint" in combined or "Connection reset" in combined:
+                retries += 1
+                logs.append(LogEntry("warning", f"I/O-Fehler beim Backup, Versuch {retries+1}/{max_retries+1} in 10s..."))
+                time.sleep(10)
+                result = _attempt()
+            else:
+                break
 
-    if result.returncode != 0:
-        msg = f"Borg create failed: {(result.stderr or '').strip() or (result.stdout or '').strip() or '(keine Ausgabe)'}"
-        logger.error(msg)
-        logs.append(LogEntry("error", msg))
-        return BorgResult(success=False, job_result=JobResult(), logs=logs)
+        duration = time.time() - start
 
-    job_result = JobResult(archive_name=archive_name, duration_seconds=round(duration, 2))
-    try:
-        data = json.loads(result.stdout)
-        archive_stats = data.get("archive", {}).get("stats", {})
-        job_result.size_bytes = archive_stats.get("original_size", 0)
-        job_result.nfiles = archive_stats.get("nfiles", 0)
-    except (json.JSONDecodeError, KeyError):
-        pass
+        if result.returncode != 0:
+            msg = f"Borg create failed: {(result.stderr or '').strip() or (result.stdout or '').strip() or '(keine Ausgabe)'}"
+            logger.error(msg)
+            logs.append(LogEntry("error", msg))
+            return BorgResult(success=False, job_result=JobResult(), logs=logs)
 
-    logs.append(LogEntry("info", f"Backup complete: {job_result.nfiles} files, {job_result.size_bytes} bytes"))
-    logger.info("Backup created: %s", archive_name)
-    return BorgResult(success=True, job_result=job_result, logs=logs)
+        job_result = JobResult(archive_name=archive_name, duration_seconds=round(duration, 2))
+        try:
+            data = json.loads(result.stdout)
+            archive_stats = data.get("archive", {}).get("stats", {})
+            job_result.size_bytes = archive_stats.get("original_size", 0)
+            job_result.nfiles = archive_stats.get("nfiles", 0)
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+        logs.append(LogEntry("info", f"Backup complete: {job_result.nfiles} files, {job_result.size_bytes} bytes"))
+        logger.info("Backup created: %s", archive_name)
+        return BorgResult(success=True, job_result=job_result, logs=logs)
+
+    finally:
+        try:
+            shutil.rmtree(staging, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def backup_all(containers: list[ContainerInfo]) -> list[BorgResult]:

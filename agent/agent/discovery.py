@@ -35,26 +35,52 @@ def _get_volume_mount_dirs(container: docker.models.containers.Container) -> set
     return dirs
 
 
-def _get_named_volumes(container: docker.models.containers.Container) -> list[dict]:
-    """Returns list of {name, source} for named docker volumes."""
+SYSTEM_MOUNTS = {"/var/run/docker.sock", "/etc/hostname", "/etc/hosts", "/etc/resolv.conf"}
+
+
+def _get_backup_mounts(container: docker.models.containers.Container, compose_dir_host: str) -> list[dict]:
+    """Returns list of mounts to be backed up via Docker-API extraction.
+
+    Excludes:
+      - bind mounts inside the compose dir (already covered by compose-dir copy)
+      - system mounts like /var/run/docker.sock
+
+    Returned dicts: {type, name, dest, source, container}
+    """
     mounts = container.attrs.get("Mounts", [])
     result: list[dict] = []
     for m in mounts:
-        if m.get("Type") == "volume":
-            name = m.get("Name", "")
-            source = m.get("Source", "")
-            if name and source:
-                result.append({"name": name, "source": source})
+        mtype = m.get("Type", "")
+        if mtype not in ("volume", "bind"):
+            continue
+        source = m.get("Source", "")
+        dest = m.get("Destination", "")
+        if not source or not dest:
+            continue
+        if source in SYSTEM_MOUNTS:
+            continue
+        if mtype == "bind" and compose_dir_host:
+            try:
+                Path(source).relative_to(compose_dir_host)
+                continue  # inside compose dir → already in compose copy
+            except ValueError:
+                pass
+        result.append({
+            "type": mtype,
+            "name": m.get("Name", "") or "",
+            "dest": dest,
+            "source": source,
+            "container": container.name or "",
+        })
     return result
 
 
 def _host_path_to_local(host_path: str) -> Path:
     """Map a host path to the mounted path inside the agent container.
 
-    The agent mounts the host's docker parent directory at DOCKER_HOST_DIR
-    (default /host/docker). HOST_BASE_DIR tells us the host-side base of
-    that mount (e.g. /home/user/docker or /share/Container). The relative
-    portion is preserved.
+    Only used for the compose dir (the one filesystem path we still need to
+    read directly). HOST_BASE_DIR tells us the host-side base of the
+    /host/docker mount; remaining path is preserved.
     """
     docker_host_dir = settings.docker_host_dir
     if host_path.startswith("/host/"):
@@ -138,11 +164,15 @@ def discover_containers(manual_paths: dict[str, str] | None = None) -> list[Cont
         compose_dir_host = manual_paths.get(project) or _get_compose_dir(primary) or ""
 
         all_volume_dirs: set[str] = set()
-        named_volumes: dict[str, str] = {}
+        backup_mounts: list[dict] = []
+        seen_sources: set[str] = set()
         for c in ctrs:
             all_volume_dirs.update(_get_volume_mount_dirs(c))
-            for v in _get_named_volumes(c):
-                named_volumes[v["name"]] = v["source"]
+            for m in _get_backup_mounts(c, compose_dir_host):
+                if m["source"] in seen_sources:
+                    continue
+                seen_sources.add(m["source"])
+                backup_mounts.append(m)
 
         has_volumes = len(all_volume_dirs) > 0
 
@@ -183,7 +213,7 @@ def discover_containers(manual_paths: dict[str, str] | None = None) -> list[Cont
             status="running",
             has_volumes=has_volumes,
             compose_dir_accessible=compose_dir_accessible,
-            named_volumes=[{"name": n, "source": s} for n, s in named_volumes.items()],
+            backup_mounts=backup_mounts,
         )
         seen_projects[project] = info
 

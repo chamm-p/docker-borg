@@ -33,7 +33,9 @@ class ContainerInfo:
     status: str
     has_volumes: bool = False
     compose_dir_accessible: bool = False
-    named_volumes: list[dict] = field(default_factory=list)  # [{name, source}, ...]
+    # Mounts der Container, die in den Backup einbezogen werden (via Docker-API extrahiert)
+    # Liste von {type: "volume"|"bind", name: str, dest: str, source: str, container: str}
+    backup_mounts: list[dict] = field(default_factory=list)
 
 
 @dataclass

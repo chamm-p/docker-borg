@@ -137,7 +137,7 @@ class CentralClient:
                     "status": c.status,
                     "has_volumes": c.has_volumes,
                     "compose_dir_accessible": c.compose_dir_accessible,
-                    "named_volumes": c.named_volumes,
+                    "backup_mounts": c.backup_mounts,
                 }
                 for c in containers
             ],

@@ -121,7 +121,7 @@ def heartbeat(
             row.status = c.status
             row.has_volumes = c.has_volumes
             row.compose_dir_accessible = c.compose_dir_accessible
-            row.named_volumes = json.dumps(c.named_volumes or [])
+            row.backup_mounts = json.dumps(c.backup_mounts or [])
         else:
             db.add(Container(
                 agent_id=agent.id,
@@ -134,7 +134,7 @@ def heartbeat(
                 status=c.status,
                 has_volumes=c.has_volumes,
                 compose_dir_accessible=c.compose_dir_accessible,
-                named_volumes=json.dumps(c.named_volumes or []),
+                backup_mounts=json.dumps(c.backup_mounts or []),
                 backup_enabled=True,
             ))
 

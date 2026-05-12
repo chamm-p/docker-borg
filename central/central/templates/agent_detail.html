@@ -408,9 +408,9 @@ function revealPassphrase() {
                                 {% else %}
                                 <strong>{{ c.compose_project }}</strong>
                                 {% endif %}
-                                {% if c._named_volumes %}
-                                <div class="text-muted small mt-1" title="Named Docker Volumes (werden ins Backup einbezogen)">
-                                    <i class="bi bi-hdd-stack me-1"></i>{{ c._named_volumes|length }} Volume{% if c._named_volumes|length != 1 %}s{% endif %}
+                                {% if c._backup_mounts %}
+                                <div class="text-muted small mt-1" title="{% for m in c._backup_mounts %}{{ m.dest }} ({{ m.type }}{% if m.name %}: {{ m.name }}{% endif %}){% if not loop.last %} • {% endif %}{% endfor %}">
+                                    <i class="bi bi-hdd-stack me-1"></i>{{ c._backup_mounts|length }} Mount{% if c._backup_mounts|length != 1 %}s{% endif %} (Docker-API)
                                 </div>
                                 {% endif %}
                             </td>

@@ -48,6 +48,8 @@ class ContainerPayload(BaseModel):
     status: str
     has_volumes: bool = False
     compose_dir_accessible: bool = False
+    backup_mounts: list[dict] = []
+    # legacy, ignored by current code:
     named_volumes: list[dict] = []
 
 
