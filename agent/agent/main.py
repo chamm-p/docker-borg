@@ -89,12 +89,19 @@ def cmd_daemon(args):
 
             jobs = client.poll_jobs()
             for job in jobs:
-                if ensure_mounted():
-                    _execute_job(job, containers, client)
-                else:
-                    logger.error("Backup target not available, skipping job %d", job.job_id)
-                    from .models import LogEntry
-                    client.report_job(job.job_id, "failed", logs=[LogEntry("error", "Backup target mount failed")])
+                client.report_job(job.job_id, "running")
+                from .models import LogEntry
+                ok, detail = ensure_mounted()
+                if not ok:
+                    client.report_job(
+                        job.job_id,
+                        "failed",
+                        logs=[LogEntry("error", detail or "Backup-Ziel konnte nicht eingehängt werden")],
+                    )
+                    continue
+                if detail:
+                    client.report_job(job.job_id, "running", logs=[LogEntry("info", detail)])
+                _execute_job(job, containers, client)
 
         except Exception:
             logger.exception("Error in poll loop")
@@ -110,8 +117,11 @@ def cmd_daemon(args):
 
 
 def _execute_job(job, containers, client: CentralClient):
+    from .models import LogEntry
     logger.info("Executing job %d: %s", job.job_id, job.job_type)
-    client.report_job(job.job_id, "running")
+
+    def stream(level: str, message: str):
+        client.report_job(job.job_id, "running", logs=[LogEntry(level, message)])
 
     try:
         if job.job_type == JobType.BACKUP:
@@ -134,30 +144,36 @@ def _execute_job(job, containers, client: CentralClient):
                         status="manual",
                     ))
 
-            all_logs = []
+            stream("info", f"Backup geplant für {len(targets)} Projekt(e): {', '.join(c.compose_project for c in targets) or '(keine)'}")
+
             all_success = True
+            backed_up = 0
             for c in targets:
                 manual = overrides.get(c.compose_project)
                 if manual:
                     c.compose_dir = manual
                     local = _host_path_to_local(manual)
                     if local.is_dir():
-                        from .discovery import _get_volume_mount_dirs  # not used; keep simple
                         c.root_files = _collect_root_files(local, set())
                     else:
-                        from .models import LogEntry
-                        all_logs.append(LogEntry("error", f"Manueller Pfad {manual} im Agent nicht zugreifbar (Project {c.compose_project})"))
+                        stream("error", f"Manueller Pfad {manual} im Agent nicht zugreifbar (Project {c.compose_project})")
                         all_success = False
                         continue
                 if not c.compose_dir or not c.root_files:
+                    stream("warning", f"{c.compose_project}: keine Backup-Dateien gefunden, übersprungen")
                     continue
+                stream("info", f"→ {c.compose_project} ({len(c.root_files)} Datei(en))")
                 r = create_backup(c)
-                all_logs.extend(r.logs)
-                if not r.success:
+                for log in r.logs:
+                    client.report_job(job.job_id, "running", logs=[log])
+                if r.success:
+                    backed_up += 1
+                else:
                     all_success = False
 
-            status = "success" if all_success else "failed"
-            client.report_job(job.job_id, status, logs=all_logs)
+            stream("info", f"Backup abgeschlossen: {backed_up}/{len(targets)} erfolgreich")
+            status = "success" if all_success and backed_up > 0 else "failed"
+            client.report_job(job.job_id, status)
 
         elif job.job_type == JobType.PRUNE:
             keep = job.params.get("keep", {})

@@ -15,28 +15,31 @@ DAVFS_CERTS_DIR = Path("/etc/davfs2/certs")
 DAVFS_CONF = Path("/etc/davfs2/davfs2.conf")
 
 
-def ensure_mounted() -> bool:
+def ensure_mounted() -> tuple[bool, str]:
+    """Returns (ok, detail). detail is a human message describing what happened."""
     global _mounted
 
     if settings.backup_type != "webdav":
-        return True
+        return True, ""
 
     if not settings.webdav_url:
-        logger.error("WebDAV URL not configured")
-        return False
+        return False, "WebDAV-URL ist nicht gesetzt"
 
     mount_point = Path(settings.webdav_mount)
     mount_point.mkdir(parents=True, exist_ok=True)
 
     if _is_mounted(mount_point):
         _mounted = True
-        return True
+        return True, f"WebDAV bereits gemountet unter {mount_point}"
 
+    cert_info = ""
     if not settings.webdav_verify_ssl:
         cert_path = _fetch_server_cert(settings.webdav_url)
         if cert_path:
             _set_servercert_in_conf(cert_path)
-            logger.warning("WebDAV SSL verification disabled (using fetched cert)")
+            cert_info = " (selbst-signiertes Zertifikat akzeptiert)"
+        else:
+            return False, "SSL-Zertifikat konnte nicht via openssl s_client geholt werden"
 
     secrets_file = Path("/tmp/davfs2-secrets")
     secrets_file.write_text(
@@ -56,8 +59,9 @@ def ensure_mounted() -> bool:
     )
 
     if result.returncode != 0:
-        logger.error("WebDAV mount failed: %s", result.stderr.strip())
-        return False
+        err = (result.stderr or result.stdout or "(keine Ausgabe)").strip()
+        logger.error("WebDAV mount failed: %s", err)
+        return False, f"davfs2-Mount fehlgeschlagen: {err}"
 
     logger.info("WebDAV mounted: %s -> %s", settings.webdav_url, mount_point)
     _mounted = True
@@ -65,7 +69,7 @@ def ensure_mounted() -> bool:
     if not settings.borg_repo:
         settings.borg_repo = str(mount_point / "borg")
 
-    return True
+    return True, f"WebDAV gemountet: {settings.webdav_url} → {mount_point}{cert_info}"
 
 
 def unmount():
