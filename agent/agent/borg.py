@@ -57,7 +57,8 @@ def cancel_active() -> bool:
 
 def _run_borg(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
     global _active_proc
-    cmd = ["borg"] + args
+    # Run at lowest priority so backup never starves the host of CPU/IO
+    cmd = ["nice", "-n", "19", "ionice", "-c", "3", "borg"] + args
     logger.debug("Running: %s", " ".join(cmd))
     proc = subprocess.Popen(
         cmd,
@@ -168,18 +169,28 @@ def create_backup(container: ContainerInfo) -> BorgResult:
     staging_root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f"{container.compose_project}-", dir=staging_root))
 
+    bound_compose = False
     try:
-        # 1. Compose-Verzeichnis kopieren
+        # 1. Compose-Verzeichnis als Bind-Mount ins Staging (kein I/O-intensives Kopieren)
         compose_dir_local = _host_path_to_local(container.compose_dir)
+        compose_staging = staging / "compose"
         if compose_dir_local.is_dir():
-            try:
+            compose_staging.mkdir()
+            mount_res = subprocess.run(
+                ["mount", "--bind", "-o", "ro", str(compose_dir_local), str(compose_staging)],
+                capture_output=True, text=True,
+            )
+            if mount_res.returncode == 0:
+                bound_compose = True
+                logs.append(LogEntry("info", f"Compose-Verzeichnis eingehängt (bind, ro): {compose_dir_local}"))
+            else:
+                # Fallback nur wenn bind nicht klappt
+                err = (mount_res.stderr or "").strip()
+                logs.append(LogEntry("warning", f"Bind-Mount fehlgeschlagen ({err}), fallback auf Kopie"))
                 shutil.copytree(
-                    compose_dir_local, staging / "compose",
-                    symlinks=True, ignore_dangling_symlinks=True,
+                    compose_dir_local, compose_staging,
+                    symlinks=True, ignore_dangling_symlinks=True, dirs_exist_ok=True,
                 )
-                logs.append(LogEntry("info", f"Compose-Verzeichnis kopiert ({compose_dir_local})"))
-            except Exception as e:
-                logs.append(LogEntry("warning", f"Compose-Dir-Kopie unvollständig: {e}"))
         else:
             logs.append(LogEntry("warning", f"Compose-Dir nicht zugreifbar: {container.compose_dir}"))
 
@@ -253,6 +264,11 @@ def create_backup(container: ContainerInfo) -> BorgResult:
         return BorgResult(success=True, job_result=job_result, logs=logs)
 
     finally:
+        if bound_compose:
+            try:
+                subprocess.run(["umount", str(staging / "compose")], capture_output=True, timeout=10)
+            except Exception:
+                pass
         try:
             shutil.rmtree(staging, ignore_errors=True)
         except Exception:

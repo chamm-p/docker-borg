@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from dataclasses import asdict
+from pathlib import Path
 
 from .config import settings
 from .discovery import discover_containers, _host_path_to_local, _collect_root_files
@@ -70,6 +71,25 @@ def cmd_list(args):
 def cmd_daemon(args):
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
+
+    # Aufräumen: alte Staging-Reste aus früheren Läufen (besonders v0.4.1 Disaster)
+    staging_root = Path("/data/staging")
+    if staging_root.exists():
+        for entry in staging_root.iterdir():
+            if entry.is_dir():
+                # Falls Bind-Mount noch aktiv: erst umount
+                try:
+                    bind_target = entry / "compose"
+                    if bind_target.is_mount():
+                        import subprocess as _sp
+                        _sp.run(["umount", str(bind_target)], capture_output=True, timeout=10)
+                except Exception:
+                    pass
+                try:
+                    import shutil as _sh
+                    _sh.rmtree(entry, ignore_errors=True)
+                except Exception:
+                    pass
 
     client = CentralClient()
 
@@ -136,22 +156,41 @@ def cmd_daemon(args):
     worker = threading.Thread(target=worker_loop, daemon=True, name="job-worker")
     worker.start()
 
+    DISCOVERY_INTERVAL = 30  # seconds between Docker introspections (heavy)
+
+    def discovery_loop():
+        while not _shutdown:
+            try:
+                containers = discover_containers(client.manual_paths)
+                with last_containers_lock:
+                    last_containers.clear()
+                    last_containers.extend(containers)
+            except Exception:
+                logger.exception("Discovery loop error")
+            for _ in range(DISCOVERY_INTERVAL):
+                if _shutdown:
+                    break
+                time.sleep(1)
+
+    discovery = threading.Thread(target=discovery_loop, daemon=True, name="discovery")
+    discovery.start()
+
+    # Main thread = heartbeat. Never touches Docker SDK directly so a stalled
+    # docker daemon cannot block the heartbeat anymore.
     while not _shutdown:
         try:
-            containers = discover_containers(client.manual_paths)
             with last_containers_lock:
-                last_containers.clear()
-                last_containers.extend(containers)
-            client.heartbeat(containers)
+                containers_snapshot = list(last_containers)
+            client.heartbeat(containers_snapshot)
         except Exception:
             logger.exception("Heartbeat loop error")
-
         for _ in range(settings.poll_interval):
             if _shutdown:
                 break
             time.sleep(1)
 
     worker.join(timeout=10)
+    discovery.join(timeout=10)
     unmount()
     client.close()
     logger.info("Agent daemon stopped")
