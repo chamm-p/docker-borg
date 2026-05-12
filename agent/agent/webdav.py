@@ -80,7 +80,6 @@ def ensure_mounted() -> tuple[bool, str]:
         "--log-file", str(log_path),
         "--log-level", "INFO",
         "mount", "webdav:", str(mount_point),
-        "--allow-other",
         "--vfs-cache-mode", "writes",
         "--dir-cache-time", "5s",
     ]
