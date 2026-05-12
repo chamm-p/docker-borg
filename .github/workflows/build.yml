@@ -21,6 +21,8 @@ jobs:
             context: ./central
           - component: agent
             context: ./agent
+          - component: worker
+            context: ./worker
     steps:
       - uses: actions/checkout@v4
 

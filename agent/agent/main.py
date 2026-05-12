@@ -10,11 +10,10 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .config import settings
-from .discovery import discover_containers, _host_path_to_local, _collect_root_files
-from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo, verify_repo, cancel_active
+from .discovery import discover_containers
 from .client import CentralClient
 from .models import JobType
-from .webdav import ensure_mounted, unmount
+from . import worker
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -41,31 +40,25 @@ def cmd_discover(args):
 
 
 def cmd_backup(args):
-    if not ensure_mounted():
-        print("ERROR: Could not mount backup target")
-        sys.exit(1)
-    init_repo()
+    """One-shot backup from the CLI. Spawns the same worker container that the daemon would."""
     containers = discover_containers()
     if args.project:
         containers = [c for c in containers if c.compose_project == args.project]
         if not containers:
             print(f"Project '{args.project}' not found")
             sys.exit(1)
-
-    results = backup_all(containers)
-    for r in results:
+    for c in containers:
+        if not c.compose_dir:
+            continue
+        print(f"Backing up {c.compose_project}...")
+        r = worker.run_backup(c, lambda m, lvl="info": print(f"  [{lvl}] {m}"))
         status = "OK" if r.success else "FAILED"
-        name = r.job_result.archive_name or "n/a"
-        print(f"  [{status}] {name} ({r.job_result.nfiles} files, {r.job_result.size_bytes} bytes)")
-        for log in r.logs:
-            if log.level == "error":
-                print(f"    ERROR: {log.message}")
+        print(f"  [{status}] {r.job_result.archive_name}")
 
 
 def cmd_list(args):
-    result = list_archives()
-    for log in result.logs:
-        print(f"  {log.message}")
+    print("Use the web UI for archive listing in v0.5.0+ (CLI list not implemented).")
+    sys.exit(1)
 
 
 def cmd_daemon(args):
@@ -116,24 +109,14 @@ def cmd_daemon(args):
                         client.report_job(job.job_id, "cancelled", logs=[LogEntry("warning", "Job vor Start abgebrochen")])
                         continue
                     client.report_job(job.job_id, "running")
-                    ok, detail = ensure_mounted()
-                    if not ok:
-                        client.report_job(
-                            job.job_id,
-                            "failed",
-                            logs=[LogEntry("error", detail or "Backup-Ziel konnte nicht eingehängt werden")],
-                        )
-                        continue
-                    if detail:
-                        client.report_job(job.job_id, "running", logs=[LogEntry("info", detail)])
 
                     cancel_watchdog_stop = threading.Event()
 
                     def watchdog():
                         while not cancel_watchdog_stop.wait(2):
                             if job.job_id in client.cancelled_jobs:
-                                logger.warning("Cancellation signal for job %d — killing active borg process", job.job_id)
-                                cancel_active()
+                                logger.warning("Cancellation signal for job %d — killing worker container", job.job_id)
+                                worker.cancel_active()
                                 return
 
                     wd = threading.Thread(target=watchdog, daemon=True, name=f"cancel-watchdog-{job.job_id}")
@@ -153,8 +136,8 @@ def cmd_daemon(args):
                     break
                 time.sleep(1)
 
-    worker = threading.Thread(target=worker_loop, daemon=True, name="job-worker")
-    worker.start()
+    job_worker = threading.Thread(target=worker_loop, daemon=True, name="job-worker")
+    job_worker.start()
 
     DISCOVERY_INTERVAL = 30  # seconds between Docker introspections (heavy)
 
@@ -189,9 +172,8 @@ def cmd_daemon(args):
                 break
             time.sleep(1)
 
-    worker.join(timeout=10)
+    job_worker.join(timeout=10)
     discovery.join(timeout=10)
-    unmount()
     client.close()
     logger.info("Agent daemon stopped")
 
@@ -236,21 +218,11 @@ def _execute_job(job, containers, client: CentralClient):
                 manual = overrides.get(c.compose_project)
                 if manual:
                     c.compose_dir = manual
-                    local = _host_path_to_local(manual)
-                    if not local.is_dir():
-                        stream("error", f"Manueller Pfad {manual} im Agent nicht zugreifbar (Project {c.compose_project})")
-                        all_success = False
-                        continue
                 if not c.compose_dir:
                     stream("warning", f"{c.compose_project}: kein Pfad gesetzt, übersprungen")
                     continue
-                local = _host_path_to_local(c.compose_dir)
-                if not local.is_dir():
-                    stream("error", f"{c.compose_project}: Verzeichnis {local} nicht zugreifbar im Agent")
-                    all_success = False
-                    continue
-                stream("info", f"→ {c.compose_project} (gesamtes Verzeichnis {c.compose_dir})")
-                r = create_backup(c)
+                stream("info", f"→ {c.compose_project}")
+                r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m))
                 for log in r.logs:
                     client.report_job(job.job_id, "running", logs=[log])
                 if r.success:
@@ -267,25 +239,15 @@ def _execute_job(job, containers, client: CentralClient):
                 client.report_job(job.job_id, status)
 
         elif job.job_type == JobType.PRUNE:
-            keep = job.params.get("keep", {})
-            r = prune(
-                keep_daily=keep.get("daily", 7),
-                keep_weekly=keep.get("weekly", 4),
-                keep_monthly=keep.get("monthly", 6),
-            )
             client.report_job(
-                job.job_id,
-                "success" if r.success else "failed",
-                logs=r.logs,
+                job.job_id, "failed",
+                logs=[LogEntry("warning", "PRUNE wird in v0.5.0 vom borgmatic-Config gesteuert (kommt in 0.5.x)")],
             )
 
         elif job.job_type == JobType.LIST:
-            r = list_archives()
             client.report_job(
-                job.job_id,
-                "success" if r.success else "failed",
-                result=asdict(r.job_result),
-                logs=r.logs,
+                job.job_id, "failed",
+                logs=[LogEntry("warning", "LIST nicht implementiert in v0.5.0")],
             )
 
         elif job.job_type == JobType.SCP_TEST:
@@ -318,8 +280,7 @@ def _execute_job(job, containers, client: CentralClient):
             )
 
         elif job.job_type == JobType.VERIFY:
-            verify_data = bool((job.params or {}).get("verify_data", False))
-            r = verify_repo(verify_data=verify_data)
+            r = worker.run_check(lambda m, lvl="info": stream(lvl, m))
             for log in r.logs:
                 client.report_job(job.job_id, "running", logs=[log])
             client.report_job(
@@ -330,12 +291,12 @@ def _execute_job(job, containers, client: CentralClient):
 
         elif job.job_type == JobType.RESTORE:
             archive = job.params.get("archive", "")
-            target = job.params.get("target_dir", "/tmp/restore")
-            r = extract_archive(archive, target)
+            r = worker.run_restore(archive, lambda m, lvl="info": stream(lvl, m))
+            for log in r.logs:
+                client.report_job(job.job_id, "running", logs=[log])
             client.report_job(
                 job.job_id,
                 "success" if r.success else "failed",
-                logs=r.logs,
             )
 
     except Exception as e:

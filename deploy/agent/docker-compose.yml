@@ -3,34 +3,23 @@ services:
     image: ghcr.io/chamm-p/docker-borg-agent:latest
     container_name: dborg-agent
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
-    security_opt:
-      - apparmor=unconfined
-    # Harte Speichergrenze — auf Inferenz-Servern wichtig damit der Agent
-    # niemals Speicher für Modelle wegfrisst. 256m ist großzügig (Peak im
-    # Test bei 500MB-Backup: 44 MB RSS). Bei OOM tötet der Kernel den
-    # Container; restart=unless-stopped startet ihn neu.
-    mem_limit: 256m
-    memswap_limit: 256m
     environment:
       - TZ=Europe/Zurich
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
       - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080
       - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
-      # Where compose project dirs live on the host (parent directory).
-      # Examples:
-      #   QNAP/Synology Container Station: /share/Container or /volume1/docker
-      #   Linux user setup: /home/<user>/docker
+      # Hostpfad-Basis deiner Compose-Projekte
       - DBORG_HOST_BASE_DIR=/home/CHANGE_ME_USER/docker
+      # Optional: andere Volume-Namen (Standard reicht meist)
+      # - DBORG_AGENT_DATA_VOLUME=agent-data
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Mount source MUST equal DBORG_HOST_BASE_DIR above
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount source MUST equal DBORG_HOST_BASE_DIR
       - /home/CHANGE_ME_USER/docker:/host/docker:ro
       - agent-data:/data
-    command: ["daemon"]
+    # Hartes Mem-Limit — Agent orchestriert nur, braucht wenig
+    mem_limit: 128m
+    memswap_limit: 128m
 
 volumes:
   agent-data:
