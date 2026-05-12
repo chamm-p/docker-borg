@@ -53,9 +53,21 @@ fi
 
 case "$MODE" in
     create)
-        # Auto-init: idempotent, schweigend wenn Repo schon existiert
         if [ -n "$BORG_REPO" ]; then
-            borg init --encryption=repokey-blake2 2>/dev/null || true
+            echo "Auto-init: borg init --encryption=repokey-blake2 $BORG_REPO"
+            init_out=$(borg init --encryption=repokey-blake2 2>&1)
+            init_rc=$?
+            if [ $init_rc -ne 0 ]; then
+                if echo "$init_out" | grep -qi "already exists"; then
+                    echo "Repo bereits initialisiert."
+                else
+                    echo "borg init fehlgeschlagen (rc=$init_rc):"
+                    echo "$init_out"
+                    # bewusst nicht exit — manchmal funktioniert create trotzdem
+                fi
+            else
+                echo "Repository initialisiert."
+            fi
         fi
         exec borgmatic --config "$CFG" --stats -v 1 create "$@"
         ;;

@@ -181,6 +181,27 @@ def _resolve_target_container(docker_client, project: str):
     return None
 
 
+def _resolve_all_project_containers(docker_client, project: str) -> list:
+    """All containers belonging to a compose project (running first, then stopped)."""
+    out: list = []
+    seen: set = set()
+    for c in docker_client.containers.list(all=False):
+        if c.labels.get("com.docker.compose.project") == project and c.id not in seen:
+            out.append(c)
+            seen.add(c.id)
+    for c in docker_client.containers.list(all=True):
+        if c.labels.get("com.docker.compose.project") == project and c.id not in seen:
+            out.append(c)
+            seen.add(c.id)
+    if not out:
+        # Fallback by name
+        for c in docker_client.containers.list(all=True):
+            if c.name == project and c.id not in seen:
+                out.append(c)
+                seen.add(c.id)
+    return out
+
+
 def _container_networks(target) -> list[str]:
     nets = target.attrs.get("NetworkSettings", {}).get("Networks", {})
     return [name for name in nets.keys() if name not in ("bridge", "host", "none")]
@@ -269,15 +290,21 @@ def _spawn_worker(
         "security_opt": security_opt,
     }
     if volumes_from_target is not None:
-        run_kwargs["volumes_from"] = [f"{volumes_from_target.name}:ro"]
-        nets = _container_networks(volumes_from_target)
+        if isinstance(volumes_from_target, list):
+            run_kwargs["volumes_from"] = [f"{c.name}:ro" for c in volumes_from_target]
+            primary = volumes_from_target[0]
+        else:
+            run_kwargs["volumes_from"] = [f"{volumes_from_target.name}:ro"]
+            primary = volumes_from_target
+        nets = _container_networks(primary)
         if nets:
             run_kwargs["network"] = nets[0]
             on_log(f"Network: {nets[0]}", "info")
 
     on_log(f"Starte Worker ({mode}) — Image {WORKER_IMAGE}", "info")
     if volumes_from_target is not None:
-        on_log(f"--volumes-from {volumes_from_target.name}:ro", "info")
+        for vfrom in run_kwargs.get("volumes_from", []):
+            on_log(f"--volumes-from {vfrom}", "info")
 
     worker = docker_client.containers.run(**run_kwargs)
     with _active_lock:
@@ -324,10 +351,11 @@ def run_backup(container: ContainerInfo, on_log) -> WorkerResult:
     start = time.time()
     docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
     try:
-        target = _resolve_target_container(docker_client, container.compose_project)
-        if not target:
+        targets = _resolve_all_project_containers(docker_client, container.compose_project)
+        if not targets:
             return WorkerResult(False, JobResult(),
-                                [LogEntry("error", f"Kein laufender Container für '{container.compose_project}' gefunden")])
+                                [LogEntry("error", f"Kein Container für '{container.compose_project}' gefunden")])
+        on_log(f"Projekt-Container: {', '.join(c.name for c in targets)}", "info")
 
         archive_prefix = f"{settings.agent_name}-{container.compose_project}"
         repo_path = _resolve_repo_path()
@@ -341,7 +369,7 @@ def run_backup(container: ContainerInfo, on_log) -> WorkerResult:
             docker_client,
             config=config,
             mode="create",
-            volumes_from_target=target,
+            volumes_from_target=targets,
             extra_volumes=extra_volumes,
             on_log=on_log,
         )
