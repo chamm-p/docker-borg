@@ -9,7 +9,7 @@ from dataclasses import asdict
 
 from .config import settings
 from .discovery import discover_containers, _host_path_to_local, _collect_root_files
-from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo
+from .borg import backup_all, create_backup, list_archives, prune, extract_archive, init_repo, verify_repo
 from .client import CentralClient
 from .models import JobType
 from .webdav import ensure_mounted, unmount
@@ -195,6 +195,17 @@ def _execute_job(job, containers, client: CentralClient):
                 "success" if r.success else "failed",
                 result=asdict(r.job_result),
                 logs=r.logs,
+            )
+
+        elif job.job_type == JobType.VERIFY:
+            verify_data = bool((job.params or {}).get("verify_data", False))
+            r = verify_repo(verify_data=verify_data)
+            for log in r.logs:
+                client.report_job(job.job_id, "running", logs=[log])
+            client.report_job(
+                job.job_id,
+                "success" if r.success else "failed",
+                result=asdict(r.job_result),
             )
 
         elif job.job_type == JobType.RESTORE:

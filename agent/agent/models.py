@@ -10,6 +10,7 @@ class JobType(str, Enum):
     PRUNE = "prune"
     RESTORE = "restore"
     LIST = "list"
+    VERIFY = "verify"
 
 
 class JobStatus(str, Enum):

@@ -176,6 +176,67 @@ def list_archives() -> BorgResult:
         return BorgResult(success=True, job_result=JobResult(), logs=logs)
 
 
+def verify_repo(verify_data: bool = False) -> BorgResult:
+    """Run borg check + dry-run restore of the latest archive.
+
+    verify_data: if True, also reads all data chunks (slow, hours on large repos).
+                  If False (default), only checks repository + archive structure.
+    """
+    logs: list[LogEntry] = []
+    start = time.time()
+
+    check_cmd = ["check"]
+    if verify_data:
+        check_cmd.append("--verify-data")
+        logs.append(LogEntry("info", "Starte borg check --verify-data (liest alle Daten, kann lange dauern)"))
+    else:
+        logs.append(LogEntry("info", "Starte borg check (Repository- und Archiv-Struktur)"))
+
+    result = _run_borg(check_cmd)
+    if result.returncode != 0:
+        msg = (result.stderr or result.stdout or "").strip() or "(keine Ausgabe)"
+        logs.append(LogEntry("error", f"borg check fehlgeschlagen: {msg}"))
+        return BorgResult(success=False, job_result=JobResult(), logs=logs)
+    logs.append(LogEntry("info", "borg check OK"))
+
+    result = _run_borg(["list", "--json"])
+    if result.returncode != 0:
+        msg = (result.stderr or result.stdout or "").strip() or "(keine Ausgabe)"
+        logs.append(LogEntry("warning", f"borg list fehlgeschlagen: {msg}"))
+        return BorgResult(success=True, job_result=JobResult(duration_seconds=round(time.time() - start, 2)), logs=logs)
+
+    try:
+        data = json.loads(result.stdout)
+        archives = sorted(data.get("archives", []), key=lambda a: a.get("start", ""), reverse=True)
+    except (json.JSONDecodeError, KeyError):
+        archives = []
+
+    if not archives:
+        logs.append(LogEntry("warning", "Keine Archive im Repository vorhanden — nichts zum Testen der Wiederherstellung"))
+        return BorgResult(success=True, job_result=JobResult(duration_seconds=round(time.time() - start, 2)), logs=logs)
+
+    latest = archives[0]["name"]
+    logs.append(LogEntry("info", f"Teste Wiederherstellung des neuesten Archivs: {latest}"))
+
+    result = _run_borg(["extract", "--dry-run", f"::{latest}"])
+    if result.returncode != 0:
+        msg = (result.stderr or result.stdout or "").strip() or "(keine Ausgabe)"
+        logs.append(LogEntry("error", f"Wiederherstellungs-Test fehlgeschlagen: {msg}"))
+        return BorgResult(
+            success=False,
+            job_result=JobResult(archive_name=latest, duration_seconds=round(time.time() - start, 2)),
+            logs=logs,
+        )
+
+    logs.append(LogEntry("info", f"Wiederherstellungs-Test erfolgreich: {latest} ist lesbar und entpackbar"))
+    logs.append(LogEntry("info", f"Backup ist recovery-fähig ({len(archives)} Archiv(e) im Repository)"))
+    return BorgResult(
+        success=True,
+        job_result=JobResult(archive_name=latest, nfiles=len(archives), duration_seconds=round(time.time() - start, 2)),
+        logs=logs,
+    )
+
+
 def extract_archive(archive_name: str, target_dir: str) -> BorgResult:
     logs: list[LogEntry] = []
     logs.append(LogEntry("info", f"Restoring {archive_name} to {target_dir}"))

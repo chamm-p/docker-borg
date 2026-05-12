@@ -83,6 +83,12 @@ def agent_detail(
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
     schedules = db.query(Schedule).filter(Schedule.agent_id == agent_id).all()
     last_job = jobs[0] if jobs else None
+    last_verify = (
+        db.query(Job)
+        .filter(Job.agent_id == agent_id, Job.job_type == "verify", Job.completed_at.isnot(None))
+        .order_by(Job.completed_at.desc())
+        .first()
+    )
 
     return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": agent,
@@ -91,6 +97,7 @@ def agent_detail(
         "schedules": schedules,
         "tab": tab,
         "traffic_light": _agent_traffic_light(agent, last_job),
+        "last_verify": last_verify,
     })
 
 
@@ -300,6 +307,23 @@ def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
         job_type="backup",
         containers=json.dumps(projects) if projects else None,
         params=json.dumps(params) if params else "{}",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@router.post("/agents/{agent_id}/verify")
+def trigger_verify(
+    agent_id: int,
+    verify_data: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    job = Job(
+        agent_id=agent_id,
+        job_type="verify",
+        params=json.dumps({"verify_data": verify_data}),
     )
     db.add(job)
     db.commit()
