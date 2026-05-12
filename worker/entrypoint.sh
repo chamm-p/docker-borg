@@ -54,6 +54,8 @@ fi
 case "$MODE" in
     create)
         if [ -n "$BORG_REPO" ]; then
+            # Stale Cache/Repo-Locks von abgebrochenen Vorgänger-Jobs lösen
+            borg break-lock 2>/dev/null || true
             echo "Auto-init: borg init --encryption=repokey-blake2 $BORG_REPO"
             # `set -e` darf hier nicht abbrechen wenn borg init failed
             set +e
