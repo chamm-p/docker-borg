@@ -80,8 +80,17 @@ def ensure_mounted() -> tuple[bool, str]:
         "--log-file", str(log_path),
         "--log-level", "INFO",
         "mount", "webdav:", str(mount_point),
-        "--vfs-cache-mode", "writes",
-        "--dir-cache-time", "5s",
+        "--vfs-cache-mode", "full",
+        "--vfs-cache-max-size", "5G",
+        "--vfs-cache-max-age", "24h",
+        "--vfs-write-back", "10s",
+        "--dir-cache-time", "1m",
+        "--retries", "5",
+        "--low-level-retries", "10",
+        "--retries-sleep", "5s",
+        "--timeout", "60s",
+        "--contimeout", "30s",
+        "--transfers", "4",
     ]
     if not settings.webdav_verify_ssl:
         cmd.append("--no-check-certificate")

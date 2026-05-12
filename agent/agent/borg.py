@@ -135,20 +135,35 @@ def create_backup(container: ContainerInfo) -> BorgResult:
         exclude_args.extend(["--exclude", pattern])
 
     create_args = ["create", "--json", "--stats"] + exclude_args + [f"::{archive_name}", "."]
-    result = _run_borg(create_args, cwd=str(compose_dir_local))
+
+    def _attempt() -> subprocess.CompletedProcess:
+        return _run_borg(create_args, cwd=str(compose_dir_local))
+
+    result = _attempt()
+
+    if result.returncode != 0 and "repository" in (result.stderr or "").lower() and "does not exist" in (result.stderr or "").lower():
+        logs.append(LogEntry("info", "Repository nicht vorhanden, wird initialisiert..."))
+        if not init_repo():
+            logs.append(LogEntry("error", "Failed to initialize repository"))
+            return BorgResult(success=False, job_result=JobResult(), logs=logs)
+        result = _attempt()
+
+    retries = 0
+    max_retries = 2
+    while result.returncode != 0 and retries < max_retries:
+        combined = (result.stderr or "") + (result.stdout or "")
+        if "Input/output error" in combined or "Transport endpoint" in combined or "Connection reset" in combined:
+            retries += 1
+            logs.append(LogEntry("warning", f"I/O-Fehler beim Backup, Versuch {retries+1}/{max_retries+1} in 10s..."))
+            time.sleep(10)
+            result = _attempt()
+        else:
+            break
+
     duration = time.time() - start
 
     if result.returncode != 0:
-        if "repository" in (result.stderr or "").lower() and "does not exist" in (result.stderr or "").lower():
-            logs.append(LogEntry("info", "Repository nicht vorhanden, wird initialisiert..."))
-            if not init_repo():
-                logs.append(LogEntry("error", "Failed to initialize repository"))
-                return BorgResult(success=False, job_result=JobResult(), logs=logs)
-            result = _run_borg(create_args, cwd=str(compose_dir_local))
-            duration = time.time() - start
-
-    if result.returncode != 0:
-        msg = f"Borg create failed: {result.stderr.strip() or result.stdout.strip() or '(keine Ausgabe)'}"
+        msg = f"Borg create failed: {(result.stderr or '').strip() or (result.stdout or '').strip() or '(keine Ausgabe)'}"
         logger.error(msg)
         logs.append(LogEntry("error", msg))
         return BorgResult(success=False, job_result=JobResult(), logs=logs)
