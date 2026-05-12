@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -28,7 +29,13 @@ class Settings(BaseSettings):
 
     docker_socket: str = "/var/run/docker.sock"
     docker_host_dir: str = "/host/docker"
-    host_base_dir: str = ""
+    host_base_dir: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "DBORG_HOST_BASE_DIR",
+            "DBORG_HOST_DIR",
+        ),
+    )
 
     root_file_globs: list[str] = [
         "docker-compose*.yml",
