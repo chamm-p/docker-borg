@@ -198,16 +198,19 @@ def _execute_job(job, containers, client: CentralClient):
                 if manual:
                     c.compose_dir = manual
                     local = _host_path_to_local(manual)
-                    if local.is_dir():
-                        c.root_files = _collect_root_files(local, set())
-                    else:
+                    if not local.is_dir():
                         stream("error", f"Manueller Pfad {manual} im Agent nicht zugreifbar (Project {c.compose_project})")
                         all_success = False
                         continue
-                if not c.compose_dir or not c.root_files:
-                    stream("warning", f"{c.compose_project}: keine Backup-Dateien gefunden, übersprungen")
+                if not c.compose_dir:
+                    stream("warning", f"{c.compose_project}: kein Pfad gesetzt, übersprungen")
                     continue
-                stream("info", f"→ {c.compose_project} ({len(c.root_files)} Datei(en))")
+                local = _host_path_to_local(c.compose_dir)
+                if not local.is_dir():
+                    stream("error", f"{c.compose_project}: Verzeichnis {local} nicht zugreifbar im Agent")
+                    all_success = False
+                    continue
+                stream("info", f"→ {c.compose_project} (gesamtes Verzeichnis {c.compose_dir})")
                 r = create_backup(c)
                 for log in r.logs:
                     client.report_job(job.job_id, "running", logs=[log])

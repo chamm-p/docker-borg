@@ -93,6 +93,29 @@ def init_repo() -> bool:
     return False
 
 
+_EXCLUDE_NAMES = [
+    ".git", ".svn", ".hg",
+    "node_modules",
+    "__pycache__",
+    ".venv", "venv",
+    ".cache",
+]
+
+
+def _build_excludes() -> list[str]:
+    patterns: list[str] = []
+    for name in _EXCLUDE_NAMES:
+        patterns.append(name)
+        patterns.append(f"{name}/**")
+        patterns.append(f"**/{name}")
+        patterns.append(f"**/{name}/**")
+    patterns.extend(["*.pyc", ".DS_Store", "**/.DS_Store"])
+    return patterns
+
+
+DEFAULT_EXCLUDES = _build_excludes()
+
+
 def create_backup(container: ContainerInfo) -> BorgResult:
     logs: list[LogEntry] = []
     start = time.time()
@@ -103,35 +126,29 @@ def create_backup(container: ContainerInfo) -> BorgResult:
         logger.error(msg)
         return BorgResult(success=False, job_result=JobResult(), logs=[LogEntry("error", msg)])
 
-    if not container.root_files:
-        msg = f"No root files found for {container.compose_project}"
-        logger.warning(msg)
-        return BorgResult(success=False, job_result=JobResult(), logs=[LogEntry("warning", msg)])
-
     archive_name = f"{settings.agent_name}-{container.compose_project}-{datetime.utcnow().strftime('%Y%m%dT%H%M%S')}"
-    logs.append(LogEntry("info", f"Starting backup: {archive_name}"))
+    logs.append(LogEntry("info", f"Starte Backup: {archive_name}"))
+    logs.append(LogEntry("info", f"Quelle: {compose_dir_local} (gesamtes Verzeichnis inkl. Volumes-Bind-Mounts)"))
 
-    result = _run_borg(
-        ["create", "--json", f"::{archive_name}"] + container.root_files,
-        cwd=str(compose_dir_local),
-    )
+    exclude_args: list[str] = []
+    for pattern in DEFAULT_EXCLUDES:
+        exclude_args.extend(["--exclude", pattern])
 
+    create_args = ["create", "--json", "--stats"] + exclude_args + [f"::{archive_name}", "."]
+    result = _run_borg(create_args, cwd=str(compose_dir_local))
     duration = time.time() - start
 
     if result.returncode != 0:
-        if "repository" in result.stderr.lower() and "does not exist" in result.stderr.lower():
-            logs.append(LogEntry("info", "Repository not found, initializing..."))
+        if "repository" in (result.stderr or "").lower() and "does not exist" in (result.stderr or "").lower():
+            logs.append(LogEntry("info", "Repository nicht vorhanden, wird initialisiert..."))
             if not init_repo():
                 logs.append(LogEntry("error", "Failed to initialize repository"))
                 return BorgResult(success=False, job_result=JobResult(), logs=logs)
-            result = _run_borg(
-                ["create", "--json", f"::{archive_name}"] + container.root_files,
-                cwd=str(compose_dir_local),
-            )
+            result = _run_borg(create_args, cwd=str(compose_dir_local))
             duration = time.time() - start
 
     if result.returncode != 0:
-        msg = f"Borg create failed: {result.stderr}"
+        msg = f"Borg create failed: {result.stderr.strip() or result.stdout.strip() or '(keine Ausgabe)'}"
         logger.error(msg)
         logs.append(LogEntry("error", msg))
         return BorgResult(success=False, job_result=JobResult(), logs=logs)
@@ -156,8 +173,8 @@ def backup_all(containers: list[ContainerInfo]) -> list[BorgResult]:
 
     results = []
     for c in containers:
-        if not c.compose_dir or not c.root_files:
-            logger.info("Skipping %s (no compose dir or root files)", c.compose_project)
+        if not c.compose_dir:
+            logger.info("Skipping %s (no compose dir)", c.compose_project)
             continue
         r = create_backup(c)
         results.append(r)
