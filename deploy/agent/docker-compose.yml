@@ -7,6 +7,8 @@ services:
       - SYS_ADMIN
     devices:
       - /dev/fuse
+    security_opt:
+      - apparmor=unconfined
     environment:
       - TZ=Europe/Zurich
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
