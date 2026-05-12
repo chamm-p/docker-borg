@@ -8,7 +8,8 @@ RUN apt-get update \
     && unzip -j /tmp/rclone.zip "*/rclone" -d /usr/local/bin/ \
     && chmod +x /usr/local/bin/rclone \
     && rm /tmp/rclone.zip \
-    && mkdir -p /mnt/webdav
+    && mkdir -p /mnt/webdav \
+    && echo "user_allow_other" >> /etc/fuse.conf
 
 WORKDIR /app
 COPY requirements.txt .

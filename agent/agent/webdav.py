@@ -67,11 +67,19 @@ def ensure_mounted() -> tuple[bool, str]:
         err = (probe.stderr or probe.stdout or "").strip() or f"exit {probe.returncode}"
         return False, f"WebDAV-Verbindung fehlgeschlagen (vor Mount):\n{err}"
 
+    if not Path("/dev/fuse").exists():
+        return False, ("/dev/fuse fehlt im Agent-Container. Ergänze in der Agent-Compose:\n"
+                       "  cap_add:\n    - SYS_ADMIN\n  devices:\n    - /dev/fuse")
+
+    log_path = Path("/tmp/rclone-mount.log")
+    log_path.write_text("")
+
     cmd = [
         "rclone",
         "--config", str(config_path),
+        "--log-file", str(log_path),
+        "--log-level", "INFO",
         "mount", "webdav:", str(mount_point),
-        "--daemon",
         "--allow-other",
         "--vfs-cache-mode", "writes",
         "--dir-cache-time", "5s",
@@ -79,31 +87,38 @@ def ensure_mounted() -> tuple[bool, str]:
     if not settings.webdav_verify_ssl:
         cmd.append("--no-check-certificate")
 
-    logger.info("Running: %s", " ".join(cmd))
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            stdin=subprocess.DEVNULL,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired:
-        return False, "rclone mount: Timeout nach 60s (Server antwortet nicht)"
+    logger.info("Running (background): %s", " ".join(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
-    combined = "\n".join(p for p in (result.stderr, result.stdout) if p and p.strip()).strip()
-
-    if result.returncode != 0:
-        msg = combined or f"rclone exit code {result.returncode}, keine Ausgabe"
-        logger.error("rclone mount failed: %s", msg)
-        return False, f"rclone-Mount fehlgeschlagen:\n{msg}"
-
-    for _ in range(20):
+    deadline = time.time() + 30
+    while time.time() < deadline:
         if _is_mounted(mount_point):
             break
-        time.sleep(0.25)
+        if proc.poll() is not None:
+            log_tail = ""
+            try:
+                log_tail = "\n".join(log_path.read_text().splitlines()[-30:])
+            except OSError:
+                pass
+            return False, f"rclone-Mount-Prozess hat sich beendet (exit {proc.returncode}). Log:\n{log_tail or '(leer)'}"
+        time.sleep(0.5)
     else:
-        return False, f"rclone exit OK, aber {mount_point} ist nicht gemountet. Ausgabe: {combined or '(leer)'}"
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+        log_tail = ""
+        try:
+            log_tail = "\n".join(log_path.read_text().splitlines()[-30:])
+        except OSError:
+            pass
+        return False, f"rclone-Mount: 30s Timeout — Mount erscheint nicht. Log:\n{log_tail or '(leer)'}"
 
     insecure_info = " (SSL-Verifikation deaktiviert)" if not settings.webdav_verify_ssl else ""
     logger.info("WebDAV mounted: %s -> %s", settings.webdav_url, mount_point)
