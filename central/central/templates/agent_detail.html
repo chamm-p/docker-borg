@@ -195,10 +195,10 @@
                         <input type="number" name="scp_port" id="scp_port" class="form-control" value="{{ agent.scp_port or 22 }}" min="1" max="65535">
                     </div>
                 </div>
-                <div class="mb-2">
+                <div class="mb-3">
                     <label for="scp_path" class="form-label">Pfad auf Remote-Host</label>
                     <input type="text" name="scp_path" id="scp_path" class="form-control" value="{{ agent.scp_path or '' }}" placeholder="/backups/{{ agent.hostname }}">
-                    <div class="form-text">Borg-Repository wird unter diesem Pfad angelegt. SSH-Key muss auf Remote-Host autorisiert sein.</div>
+                    <div class="form-text">Borg-Repository wird unter diesem Pfad angelegt.</div>
                 </div>
             </div>
 
@@ -214,6 +214,17 @@
 
             <div id="section-webdav" class="target-section" style="display: {{ 'block' if agent.backup_type == 'webdav' else 'none' }}">
                 <hr>
+                <div class="alert alert-warning d-flex align-items-start mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+                    <div>
+                        <strong>WebDAV ist für borg-Backups suboptimal.</strong> Borg macht viele kleine
+                        atomare Schreib-Operationen auf die Repository-Index-Dateien, was via WebDAV
+                        regelmäßig zu I/O-Fehlern führt — gerade bei großen oder lang laufenden Backups.
+                        Wir mildern das mit aggressivem lokalem Cache und Retry-Logik, aber:
+                        <strong>für produktive Setups ist SCP/SSH die deutlich stabilere Wahl</strong>
+                        (Synology bietet ebenfalls SSH; ein Borg-natives Ziel via SSH umgeht das Problem komplett).
+                    </div>
+                </div>
                 <h6 class="text-uppercase text-muted small mb-3">WebDAV-Verbindung</h6>
                 <div class="mb-3">
                     <label for="webdav_url" class="form-label">URL</label>
@@ -245,6 +256,51 @@
         </form>
     </div>
 </div>
+
+{% if agent.backup_type == 'scp' %}
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-key me-2"></i>SSH-Schlüssel des Agents</h5>
+        <p class="text-muted small mb-0">Der Agent generiert beim Start ein Ed25519-Schlüsselpaar. Der Public Key muss auf dem Backup-Server in <code>~/.ssh/authorized_keys</code> liegen.</p>
+    </div>
+    <div class="card-body">
+        {% if agent.ssh_public_key %}
+        <label class="form-label">Public Key:</label>
+        <div class="input-group mb-2">
+            <textarea class="form-control font-monospace" id="ssh-pubkey" rows="2" readonly>{{ agent.ssh_public_key }}</textarea>
+            <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('ssh-pubkey').value); this.innerHTML='<i class=&quot;bi bi-check2&quot;></i>'; setTimeout(()=>this.innerHTML='<i class=&quot;bi bi-clipboard&quot;></i>', 1500)" title="In Zwischenablage kopieren"><i class="bi bi-clipboard"></i></button>
+        </div>
+        <p class="text-muted small">Manuell installieren auf dem Server: <code>echo "&lt;pubkey&gt;" &gt;&gt; ~/.ssh/authorized_keys</code></p>
+
+        <hr class="my-4">
+        <h6 class="text-uppercase text-muted small mb-3">Automatische Installation</h6>
+        <p class="text-muted small mb-3">Einmaliges Passwort eingeben — der Agent installiert seinen Public Key auf dem Server. Das Passwort wird nicht gespeichert.</p>
+        {% set q = request.query_params %}
+        {% if q.get('error') == 'password_required' %}
+        <div class="alert alert-warning py-2 mb-3"><i class="bi bi-exclamation-triangle-fill me-1"></i>Passwort darf nicht leer sein.</div>
+        {% endif %}
+        <form method="post" action="/agents/{{ agent.id }}/scp/install-key" class="d-flex gap-2 flex-wrap align-items-end">
+            <div style="flex: 1; min-width: 240px;">
+                <label for="scp_temp_password" class="form-label">SSH-Passwort von {{ agent.scp_user or 'Benutzer' }}@{{ agent.scp_host or 'Host' }}</label>
+                <input type="password" name="password" id="scp_temp_password" class="form-control" required autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload me-1"></i>Key auf Server installieren</button>
+        </form>
+
+        <hr class="my-4">
+        <form method="post" action="/agents/{{ agent.id }}/scp/test">
+            <button type="submit" class="btn btn-outline-success"><i class="bi bi-wifi me-1"></i>SSH-Verbindung testen</button>
+            <span class="text-muted small ms-2">Prüft ob Key vom Server akzeptiert wird.</span>
+        </form>
+        {% else %}
+        <div class="alert alert-info py-2 mb-0">
+            <i class="bi bi-hourglass-split me-1"></i>
+            Public Key wird beim nächsten Heartbeat vom Agent gemeldet. Falls länger als 30s nichts erscheint, prüfe ob der Agent läuft (v0.5.0 oder neuer nötig).
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 <script>
 function toggleTargetType() {
@@ -351,6 +407,11 @@ function revealPassphrase() {
                                 <div class="text-muted small">{{ c.compose_project }}</div>
                                 {% else %}
                                 <strong>{{ c.compose_project }}</strong>
+                                {% endif %}
+                                {% if c._named_volumes %}
+                                <div class="text-muted small mt-1" title="Named Docker Volumes (werden ins Backup einbezogen)">
+                                    <i class="bi bi-hdd-stack me-1"></i>{{ c._named_volumes|length }} Volume{% if c._named_volumes|length != 1 %}s{% endif %}
+                                </div>
                                 {% endif %}
                             </td>
                             <td class="text-muted small">{{ c.container_name }}</td>

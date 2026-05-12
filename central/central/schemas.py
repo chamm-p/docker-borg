@@ -48,11 +48,13 @@ class ContainerPayload(BaseModel):
     status: str
     has_volumes: bool = False
     compose_dir_accessible: bool = False
+    named_volumes: list[dict] = []
 
 
 class HeartbeatRequest(BaseModel):
     hostname: str
     agent_version: str = "0.2.0"
+    ssh_public_key: str = ""
     containers: list[ContainerPayload]
 
 

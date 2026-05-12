@@ -79,6 +79,10 @@ def agent_detail(
     for c in containers:
         c._files = json.loads(c.root_files) if c.root_files else []
         c._sicherbar = bool(c.compose_dir and c._files)
+        try:
+            c._named_volumes = json.loads(c.named_volumes) if c.named_volumes else []
+        except (json.JSONDecodeError, TypeError):
+            c._named_volumes = []
 
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
     schedules = db.query(Schedule).filter(Schedule.agent_id == agent_id).all()
@@ -144,6 +148,53 @@ def update_target(
                        local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=target", status_code=303)
+
+
+@router.post("/agents/{agent_id}/scp/test")
+def scp_test(agent_id: int, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    job = Job(
+        agent_id=agent_id,
+        job_type="scp_test",
+        params=json.dumps({
+            "host": agent.scp_host or "",
+            "user": agent.scp_user or "",
+            "port": agent.scp_port or 22,
+        }),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@router.post("/agents/{agent_id}/scp/install-key")
+def scp_install_key(
+    agent_id: int,
+    password: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    if not password:
+        return RedirectResponse(f"/agents/{agent_id}?tab=target&error=password_required", status_code=303)
+    job = Job(
+        agent_id=agent_id,
+        job_type="scp_install_key",
+        params=json.dumps({
+            "host": agent.scp_host or "",
+            "user": agent.scp_user or "",
+            "port": agent.scp_port or 22,
+            "password": password,
+        }),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
 @router.post("/agents/{agent_id}/target/check")

@@ -29,6 +29,9 @@ def _borg_env() -> dict[str, str]:
     env["BORG_PASSPHRASE"] = settings.borg_passphrase
     env["BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK"] = "yes"
     env["BORG_RELOCATED_REPO_ACCESS_IS_OK"] = "yes"
+    if settings.backup_type == "scp":
+        from .ssh import borg_rsh
+        env["BORG_RSH"] = borg_rsh()
     return env
 
 
@@ -128,13 +131,30 @@ def create_backup(container: ContainerInfo) -> BorgResult:
 
     archive_name = f"{settings.agent_name}-{container.compose_project}-{datetime.utcnow().strftime('%Y%m%dT%H%M%S')}"
     logs.append(LogEntry("info", f"Starte Backup: {archive_name}"))
-    logs.append(LogEntry("info", f"Quelle: {compose_dir_local} (gesamtes Verzeichnis inkl. Volumes-Bind-Mounts)"))
+    logs.append(LogEntry("info", f"Compose-Verzeichnis: {compose_dir_local}"))
+
+    extra_sources: list[str] = []
+    skipped_volumes: list[str] = []
+    for v in (container.named_volumes or []):
+        src = v.get("source") or ""
+        name = v.get("name") or ""
+        if not src:
+            continue
+        p = Path(src)
+        if p.is_dir():
+            extra_sources.append(str(p))
+            logs.append(LogEntry("info", f"Named Volume: {name} → {src}"))
+        else:
+            skipped_volumes.append(f"{name} ({src})")
+
+    if skipped_volumes:
+        logs.append(LogEntry("warning", f"Volume-Daten nicht zugreifbar (Mount fehlt im Agent?): {', '.join(skipped_volumes)}"))
 
     exclude_args: list[str] = []
     for pattern in DEFAULT_EXCLUDES:
         exclude_args.extend(["--exclude", pattern])
 
-    create_args = ["create", "--json", "--stats"] + exclude_args + [f"::{archive_name}", "."]
+    create_args = ["create", "--json", "--stats"] + exclude_args + [f"::{archive_name}", "."] + extra_sources
 
     def _attempt() -> subprocess.CompletedProcess:
         return _run_borg(create_args, cwd=str(compose_dir_local))

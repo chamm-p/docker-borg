@@ -249,6 +249,35 @@ def _execute_job(job, containers, client: CentralClient):
                 logs=r.logs,
             )
 
+        elif job.job_type == JobType.SCP_TEST:
+            from .ssh import test_connection
+            params = job.params or {}
+            ok, msg = test_connection(
+                params.get("host", ""),
+                params.get("user", ""),
+                int(params.get("port", 22)),
+            )
+            client.report_job(
+                job.job_id,
+                "success" if ok else "failed",
+                logs=[LogEntry("info" if ok else "error", msg)],
+            )
+
+        elif job.job_type == JobType.SCP_INSTALL_KEY:
+            from .ssh import install_pubkey
+            params = job.params or {}
+            ok, msg = install_pubkey(
+                params.get("host", ""),
+                params.get("user", ""),
+                int(params.get("port", 22)),
+                params.get("password", ""),
+            )
+            client.report_job(
+                job.job_id,
+                "success" if ok else "failed",
+                logs=[LogEntry("info" if ok else "error", msg)],
+            )
+
         elif job.job_type == JobType.VERIFY:
             verify_data = bool((job.params or {}).get("verify_data", False))
             r = verify_repo(verify_data=verify_data)

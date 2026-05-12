@@ -116,9 +116,16 @@ class CentralClient:
         return resp
 
     def heartbeat(self, containers: list[ContainerInfo]) -> bool:
+        ssh_pubkey = ""
+        try:
+            from .ssh import get_public_key
+            ssh_pubkey = get_public_key()
+        except Exception as e:
+            logger.warning("Could not produce SSH pubkey: %s", e)
         body = {
             "hostname": settings.agent_name or socket.gethostname(),
             "agent_version": AGENT_VERSION,
+            "ssh_public_key": ssh_pubkey,
             "containers": [
                 {
                     "container_id": c.container_id,
@@ -130,6 +137,7 @@ class CentralClient:
                     "status": c.status,
                     "has_volumes": c.has_volumes,
                     "compose_dir_accessible": c.compose_dir_accessible,
+                    "named_volumes": c.named_volumes,
                 }
                 for c in containers
             ],

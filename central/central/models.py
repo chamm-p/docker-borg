@@ -36,6 +36,8 @@ class Agent(Base):
     last_connection_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_connection_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     containers: Mapped[list["Container"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
@@ -58,6 +60,7 @@ class Container(Base):
     status: Mapped[str] = mapped_column(String(20), default="running")
     has_volumes: Mapped[bool] = mapped_column(Boolean, default=False)
     compose_dir_accessible: Mapped[bool] = mapped_column(Boolean, default=False)
+    named_volumes: Mapped[str] = mapped_column(Text, default="[]")
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

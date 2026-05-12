@@ -11,6 +11,8 @@ class JobType(str, Enum):
     RESTORE = "restore"
     LIST = "list"
     VERIFY = "verify"
+    SCP_TEST = "scp_test"
+    SCP_INSTALL_KEY = "scp_install_key"
 
 
 class JobStatus(str, Enum):
@@ -31,6 +33,7 @@ class ContainerInfo:
     status: str
     has_volumes: bool = False
     compose_dir_accessible: bool = False
+    named_volumes: list[dict] = field(default_factory=list)  # [{name, source}, ...]
 
 
 @dataclass

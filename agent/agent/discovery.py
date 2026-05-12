@@ -35,6 +35,19 @@ def _get_volume_mount_dirs(container: docker.models.containers.Container) -> set
     return dirs
 
 
+def _get_named_volumes(container: docker.models.containers.Container) -> list[dict]:
+    """Returns list of {name, source} for named docker volumes."""
+    mounts = container.attrs.get("Mounts", [])
+    result: list[dict] = []
+    for m in mounts:
+        if m.get("Type") == "volume":
+            name = m.get("Name", "")
+            source = m.get("Source", "")
+            if name and source:
+                result.append({"name": name, "source": source})
+    return result
+
+
 def _host_path_to_local(host_path: str) -> Path:
     """Map a host path to the mounted path inside the agent container.
 
@@ -125,8 +138,11 @@ def discover_containers(manual_paths: dict[str, str] | None = None) -> list[Cont
         compose_dir_host = manual_paths.get(project) or _get_compose_dir(primary) or ""
 
         all_volume_dirs: set[str] = set()
+        named_volumes: dict[str, str] = {}
         for c in ctrs:
             all_volume_dirs.update(_get_volume_mount_dirs(c))
+            for v in _get_named_volumes(c):
+                named_volumes[v["name"]] = v["source"]
 
         has_volumes = len(all_volume_dirs) > 0
 
@@ -167,6 +183,7 @@ def discover_containers(manual_paths: dict[str, str] | None = None) -> list[Cont
             status="running",
             has_volumes=has_volumes,
             compose_dir_accessible=compose_dir_accessible,
+            named_volumes=[{"name": n, "source": s} for n, s in named_volumes.items()],
         )
         seen_projects[project] = info
 

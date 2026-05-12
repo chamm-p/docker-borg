@@ -102,6 +102,8 @@ def heartbeat(
     agent.status = "online"
     if req.agent_version:
         agent.agent_version = req.agent_version
+    if req.ssh_public_key:
+        agent.ssh_public_key = req.ssh_public_key
 
     existing = {c.compose_project: c for c in db.query(Container).filter(Container.agent_id == agent.id).all()}
     seen: set[str] = set()
@@ -119,6 +121,7 @@ def heartbeat(
             row.status = c.status
             row.has_volumes = c.has_volumes
             row.compose_dir_accessible = c.compose_dir_accessible
+            row.named_volumes = json.dumps(c.named_volumes or [])
         else:
             db.add(Container(
                 agent_id=agent.id,
@@ -131,6 +134,7 @@ def heartbeat(
                 status=c.status,
                 has_volumes=c.has_volumes,
                 compose_dir_accessible=c.compose_dir_accessible,
+                named_volumes=json.dumps(c.named_volumes or []),
                 backup_enabled=True,
             ))
 

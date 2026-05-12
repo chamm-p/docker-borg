@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends borgbackup openssh-client tzdata openssl fuse3 ca-certificates curl unzip \
+    && apt-get install -y --no-install-recommends borgbackup openssh-client sshpass tzdata openssl fuse3 ca-certificates curl unzip \
     && rm -rf /var/lib/apt/lists/* \
     && ARCH="$(dpkg --print-architecture)" \
     && curl -fsSL "https://downloads.rclone.org/rclone-current-linux-${ARCH}.zip" -o /tmp/rclone.zip \

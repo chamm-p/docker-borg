@@ -63,6 +63,8 @@ def update_job_status(
         job.started_at = datetime.utcnow()
     elif update.status in ("success", "failed", "cancelled"):
         job.completed_at = datetime.utcnow()
+        if job.job_type == "scp_install_key":
+            job.params = "{}"
 
     if update.result:
         job.result = json.dumps(update.result)
