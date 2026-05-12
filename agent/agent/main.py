@@ -4,6 +4,7 @@ import argparse
 import logging
 import signal
 import sys
+import threading
 import time
 from dataclasses import asdict
 
@@ -82,35 +83,55 @@ def cmd_daemon(args):
 
     logger.info("Agent daemon started (poll interval: %ds)", settings.poll_interval)
 
+    last_containers: list = []
+    last_containers_lock = threading.Lock()
+
+    def worker_loop():
+        from .models import LogEntry
+        while not _shutdown:
+            try:
+                jobs = client.poll_jobs()
+                for job in jobs:
+                    client.report_job(job.job_id, "running")
+                    ok, detail = ensure_mounted()
+                    if not ok:
+                        client.report_job(
+                            job.job_id,
+                            "failed",
+                            logs=[LogEntry("error", detail or "Backup-Ziel konnte nicht eingehängt werden")],
+                        )
+                        continue
+                    if detail:
+                        client.report_job(job.job_id, "running", logs=[LogEntry("info", detail)])
+                    with last_containers_lock:
+                        containers_for_job = list(last_containers)
+                    _execute_job(job, containers_for_job, client)
+            except Exception:
+                logger.exception("Worker loop error")
+            for _ in range(settings.poll_interval):
+                if _shutdown:
+                    break
+                time.sleep(1)
+
+    worker = threading.Thread(target=worker_loop, daemon=True, name="job-worker")
+    worker.start()
+
     while not _shutdown:
         try:
             containers = discover_containers(client.manual_paths)
+            with last_containers_lock:
+                last_containers.clear()
+                last_containers.extend(containers)
             client.heartbeat(containers)
-
-            jobs = client.poll_jobs()
-            for job in jobs:
-                client.report_job(job.job_id, "running")
-                from .models import LogEntry
-                ok, detail = ensure_mounted()
-                if not ok:
-                    client.report_job(
-                        job.job_id,
-                        "failed",
-                        logs=[LogEntry("error", detail or "Backup-Ziel konnte nicht eingehängt werden")],
-                    )
-                    continue
-                if detail:
-                    client.report_job(job.job_id, "running", logs=[LogEntry("info", detail)])
-                _execute_job(job, containers, client)
-
         except Exception:
-            logger.exception("Error in poll loop")
+            logger.exception("Heartbeat loop error")
 
         for _ in range(settings.poll_interval):
             if _shutdown:
                 break
             time.sleep(1)
 
+    worker.join(timeout=10)
     unmount()
     client.close()
     logger.info("Agent daemon stopped")

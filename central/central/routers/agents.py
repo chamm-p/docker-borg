@@ -49,6 +49,9 @@ def get_current_agent(
     agent = db.query(Agent).filter(Agent.token_hash == token_hash).first()
     if not agent:
         raise HTTPException(401, "Invalid agent token")
+    agent.last_heartbeat = datetime.utcnow()
+    agent.status = "online"
+    db.commit()
     return agent
 
 
