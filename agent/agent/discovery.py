@@ -267,13 +267,33 @@ def _get_backup_mounts(
     return result
 
 
+def _own_compose_project(client: docker.DockerClient) -> str | None:
+    """Compose-Projekt des Agent-Containers selbst — wird vom Backup ausgeschlossen.
+
+    Backup von sich selbst bringt nichts: der Agent-Container hat keine Daten
+    außer der Konfig, die zentral liegt. Self-Backup würde nur ein nutzloses
+    Mini-Archive pro Lauf erzeugen.
+    """
+    try:
+        import socket as _socket
+        me = client.containers.get(_socket.gethostname())
+        return (me.labels or {}).get("com.docker.compose.project")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def discover_containers(manual_paths: dict[str, str] | None = None) -> list[ContainerInfo]:
     manual_paths = manual_paths or {}
     client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
 
+    own_project = _own_compose_project(client)
+
     project_containers: dict[str, list] = {}
     for c in client.containers.list(all=False):
-        project_containers.setdefault(_get_compose_project(c), []).append(c)
+        project = _get_compose_project(c)
+        if project == own_project:
+            continue  # Self-Backup vermeiden
+        project_containers.setdefault(project, []).append(c)
 
     discovered: list[ContainerInfo] = []
 

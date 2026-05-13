@@ -174,6 +174,13 @@ def _build_borgmatic_config(
             # (pg_restore 17 crashed gegen PG <17 Server, transaction_timeout)
             entry["pg_dump_command"] = "dborg-pg-shim pg_dump"
             entry["pg_restore_command"] = "dborg-pg-shim pg_restore"
+        if t in ("mariadb", "mysql"):
+            # mariadb-client 10.19+/11.x verlangt TLS by default. Compose-interne
+            # mariadb-/mysql-Container haben oft kein TLS → Verbindung schlägt fehl
+            # mit "TLS/SSL error: SSL is required, but the server does not support it".
+            # Default tls=false; User kann das im UI überschreiben, wenn er TLS-Server hat.
+            entry.setdefault("tls", False)
+            entry.setdefault("restore_tls", False)
         grouped.setdefault(key, []).append(entry)
 
     for key, items in grouped.items():

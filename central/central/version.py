@@ -1,8 +1,9 @@
-__version__ = "0.5.17"
-# v0.5.17 — Hotfix: DB-Replay funktioniert jetzt gegen Postgres <17 Server
-# (pg_restore 17 schickt SET transaction_timeout an PG 16, kennt der nicht).
-# Worker hat jetzt postgresql15/16/17-client side-by-side, dborg-pg-shim wählt
-# zur Laufzeit den passenden Client auf Basis SHOW server_version_num.
-# Lokal E2E getestet: PG 16 Server → Shim wählt pg_restore 16.13 → 1000 Rows
-# konsistent zurückgespielt.
+__version__ = "0.5.18"
+# v0.5.18 — Mailcow + Self-Backup-Fixes
+# - mariadb-/mysql-Hook bekommt Default tls=false (restore_tls=false),
+#   weil mariadb-client 11.x TLS by default verlangt und mailcow's mariadb 10.x
+#   gar kein TLS supportet. Lokal mit mariadb:10.5 verifiziert: Backup + Restore
+#   gehen jetzt, 100 Rows kommen sauber zurück.
+# - Discovery skipped das eigene Compose-Projekt des Agents (Container-Label
+#   com.docker.compose.project). Self-Backup von 1.95 kB Müll fällt weg.
 APP_VERSION = __version__
