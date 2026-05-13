@@ -99,15 +99,15 @@ def cancel_active() -> bool:
         return False
 
 
-def _build_borgmatic_config(container: ContainerInfo, repo_path: str, archive_prefix: str) -> dict:
+def _build_borgmatic_config(container: ContainerInfo, repo_path: str, archive_prefix: str, excluded_mounts: set | None = None) -> dict:
     """Produces a borgmatic config dict for one compose project."""
+    excluded = set(excluded_mounts or [])
     sources: list[str] = []
     if container.compose_dir:
         sources.append("/mnt/compose")
-    # Each mount inherited via --volumes-from appears at its original destination
     for m in (container.backup_mounts or []):
         dest = m.get("dest")
-        if dest:
+        if dest and dest not in excluded:
             sources.append(dest)
     sources = sorted(set(sources))
 
@@ -238,6 +238,7 @@ def _spawn_worker(
     extra_args: list[str] | None = None,
     volumes_from_target=None,
     extra_volumes: dict | None = None,
+    extra_env: dict | None = None,
     on_log,
 ) -> tuple[int, dict]:
     """Common worker spawn + log streaming. Returns (exit_code, extra_state)."""
@@ -271,6 +272,8 @@ def _spawn_worker(
         env["DBORG_WEBDAV_USER"] = settings.webdav_user or ""
         env["DBORG_WEBDAV_PASSWORD"] = settings.webdav_password or ""
         env["DBORG_WEBDAV_VERIFY_SSL"] = "true" if settings.webdav_verify_ssl else "false"
+    if extra_env:
+        env.update(extra_env)
 
     volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/data", "mode": "rw"}}
     if settings.backup_type == "local" and settings.local_path:
@@ -357,7 +360,7 @@ def _spawn_worker(
     return exit_code, {"config_token": job_token}
 
 
-def run_backup(container: ContainerInfo, on_log) -> WorkerResult:
+def run_backup(container: ContainerInfo, on_log, excluded_mounts: list[str] | None = None) -> WorkerResult:
     """Run a backup for one compose project via an ephemeral borgmatic worker."""
     start = time.time()
     docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
@@ -370,7 +373,7 @@ def run_backup(container: ContainerInfo, on_log) -> WorkerResult:
 
         archive_prefix = f"{settings.agent_name}-{container.compose_project}"
         repo_path = _resolve_repo_path()
-        config = _build_borgmatic_config(container, repo_path, archive_prefix)
+        config = _build_borgmatic_config(container, repo_path, archive_prefix, excluded_mounts=set(excluded_mounts or []))
 
         extra_volumes: dict = {}
         if container.compose_dir:
@@ -419,24 +422,49 @@ def run_check(on_log) -> WorkerResult:
         docker_client.close()
 
 
-def run_restore(archive: str, on_log) -> WorkerResult:
-    """Stellt ein Archiv im Worker-Container nach /data/restore/<archive>/ wieder her."""
+def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "") -> WorkerResult:
+    """Extrahiert ein Archiv (oder einen Sub-Pfad).
+
+    Wenn host_target gesetzt: dieser HOST-Pfad wird in den Worker gebunden
+    und die Dateien landen direkt dort. Andernfalls: Extract ins agent-data
+    Volume unter /data/restore, abrufbar via `docker cp dborg-agent:/data/restore ...`.
+    """
     start = time.time()
     docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+
+    extra_volumes: dict = {}
+    extra_env: dict = {}
+    if host_target:
+        try:
+            from pathlib import Path as _P
+            _P(host_target).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        extra_volumes[host_target] = {"bind": "/restore", "mode": "rw"}
+        extra_env["DBORG_RESTORE_DIR"] = "/restore"
+    else:
+        extra_env["DBORG_RESTORE_DIR"] = "/data/restore"
+
     try:
         config = _minimal_config(_resolve_repo_path())
+        args = [archive]
+        if sub_path:
+            args.append(sub_path)
         exit_code, _ = _spawn_worker(
             docker_client,
             config=config,
-            mode="restore",
-            extra_args=["--archive", archive],
+            mode="extract",
+            extra_args=args,
+            extra_volumes=extra_volumes or None,
+            extra_env=extra_env,
             on_log=on_log,
         )
         duration = round(time.time() - start, 2)
         if exit_code != 0:
             return WorkerResult(False, JobResult(duration_seconds=duration),
                                 [LogEntry("error", f"Worker exit {exit_code}")])
+        location = host_target or "/data/restore (im Agent-Container — via `docker cp dborg-agent:/data/restore <ziel>` abrufbar)"
         return WorkerResult(True, JobResult(archive_name=archive, duration_seconds=duration),
-                            [LogEntry("info", f"Wiederherstellung abgeschlossen in {duration}s")])
+                            [LogEntry("info", f"Wiederherstellung abgeschlossen in {duration}s — Dateien unter: {location}")])
     finally:
         docker_client.close()

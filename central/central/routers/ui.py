@@ -46,10 +46,23 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         backupable = [c for c in containers if c.compose_dir and c.root_files and c.root_files != "[]"]
         enabled = [c for c in backupable if c.backup_enabled]
         last_job = db.query(Job).filter(Job.agent_id == a.id).order_by(Job.created_at.desc()).first()
+        last_backup = (
+            db.query(Job)
+            .filter(Job.agent_id == a.id, Job.job_type == "backup",
+                    Job.status.in_(("success", "failed", "cancelled")))
+            .order_by(Job.completed_at.desc())
+            .first()
+        )
         last_success = (
             db.query(Job)
             .filter(Job.agent_id == a.id, Job.job_type == "backup", Job.status == "success")
             .order_by(Job.completed_at.desc())
+            .first()
+        )
+        running_job = (
+            db.query(Job)
+            .filter(Job.agent_id == a.id, Job.status.in_(("pending", "running")))
+            .order_by(Job.created_at.desc())
             .first()
         )
         cards.append({
@@ -58,7 +71,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "backupable_count": len(backupable),
             "enabled_count": len(enabled),
             "last_job": last_job,
+            "last_backup": last_backup,
             "last_success": last_success,
+            "running_job": running_job,
             "traffic_light": _agent_traffic_light(a, last_job),
         })
     return templates.TemplateResponse(request, "dashboard.html", {"cards": cards})
@@ -83,6 +98,10 @@ def agent_detail(
             c._backup_mounts = json.loads(c.backup_mounts) if c.backup_mounts else []
         except (json.JSONDecodeError, TypeError):
             c._backup_mounts = []
+        try:
+            c._excluded_mounts = set(json.loads(c.excluded_mounts)) if c.excluded_mounts else set()
+        except (json.JSONDecodeError, TypeError):
+            c._excluded_mounts = set()
 
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
     schedules = db.query(Schedule).filter(Schedule.agent_id == agent_id).all()
@@ -296,6 +315,29 @@ def set_manual_path(
     return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
 
 
+@router.post("/agents/{agent_id}/containers/{container_id}/mounts")
+async def update_container_mounts(
+    agent_id: int,
+    container_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    row = db.query(Container).filter(Container.id == container_id, Container.agent_id == agent_id).first()
+    if not row:
+        return HTMLResponse("Container nicht gefunden", status_code=404)
+    form = await request.form()
+    # form contains "include" entries with the dest path for each enabled mount
+    included = set(form.getlist("include"))
+    try:
+        all_mounts = json.loads(row.backup_mounts) if row.backup_mounts else []
+    except (json.JSONDecodeError, TypeError):
+        all_mounts = []
+    excluded = [m.get("dest") for m in all_mounts if m.get("dest") and m["dest"] not in included]
+    row.excluded_mounts = json.dumps(excluded)
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
+
+
 @router.post("/agents/{agent_id}/containers")
 async def update_container_selection(
     agent_id: int,
@@ -377,7 +419,22 @@ def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
     )
     projects = sorted({c.compose_project for c in enabled if c.compose_project})
     overrides = {c.compose_project: c.manual_compose_dir for c in enabled if c.manual_compose_dir}
-    return projects, {"compose_dirs": overrides} if overrides else {}
+    excludes: dict[str, list[str]] = {}
+    for c in enabled:
+        if not c.excluded_mounts:
+            continue
+        try:
+            ex = json.loads(c.excluded_mounts)
+        except (json.JSONDecodeError, TypeError):
+            ex = []
+        if ex:
+            excludes[c.compose_project] = ex
+    params: dict = {}
+    if overrides:
+        params["compose_dirs"] = overrides
+    if excludes:
+        params["exclude_mounts"] = excludes
+    return projects, params
 
 
 @router.post("/agents/{agent_id}/backup")
@@ -428,6 +485,8 @@ def trigger_verify(
 def trigger_restore(
     agent_id: int,
     archive: str = Form(...),
+    sub_path: str = Form(""),
+    host_target: str = Form(""),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -437,11 +496,16 @@ def trigger_restore(
     job = Job(
         agent_id=agent_id,
         job_type="restore",
-        params=json.dumps({"archive": archive, "target_dir": "/tmp/restore"}),
+        params=json.dumps({
+            "archive": archive,
+            "sub_path": sub_path.strip(),
+            "host_target": host_target.strip(),
+        }),
     )
     db.add(job)
     db.commit()
-    return RedirectResponse(f"/agents/{agent_id}?tab=recovery", status_code=303)
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
 @router.post("/agents/{agent_id}/delete")

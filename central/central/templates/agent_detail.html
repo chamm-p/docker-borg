@@ -380,7 +380,8 @@ function revealPassphrase() {
             Bei Container ohne Compose-Label (z.B. Nextcloud AIO) kannst du den Pfad manuell unten in der Spalte „Verzeichnis" eintragen.
         </div>
         {% endif %}
-        <form method="post" action="/agents/{{ agent.id }}/containers">
+        <form id="enabled-form" method="post" action="/agents/{{ agent.id }}/containers"></form>
+        <div>
             <div class="table-responsive">
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
@@ -399,7 +400,7 @@ function revealPassphrase() {
                             <td>
                                 {% if effective_dir %}
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" name="enabled" value="{{ c.id }}" {% if c.backup_enabled %}checked{% endif %}>
+                                    <input class="form-check-input" type="checkbox" name="enabled" value="{{ c.id }}" form="enabled-form" {% if c.backup_enabled %}checked{% endif %}>
                                 </div>
                                 {% else %}
                                 <span class="text-muted" title="Pfad eintragen, um zu aktivieren">—</span>
@@ -413,9 +414,11 @@ function revealPassphrase() {
                                 <strong>{{ c.compose_project }}</strong>
                                 {% endif %}
                                 {% if c._backup_mounts %}
-                                <div class="text-muted small mt-1" title="{% for m in c._backup_mounts %}{{ m.dest }} ({{ m.type }}{% if m.name %}: {{ m.name }}{% endif %}){% if not loop.last %} • {% endif %}{% endfor %}">
-                                    <i class="bi bi-hdd-stack me-1"></i>{{ c._backup_mounts|length }} Mount{% if c._backup_mounts|length != 1 %}s{% endif %} (Docker-API)
-                                </div>
+                                {% set active_mounts = c._backup_mounts|rejectattr('dest', 'in', c._excluded_mounts)|list %}
+                                <button class="btn btn-link btn-sm p-0 mt-1 small text-muted" type="button" data-bs-toggle="collapse" data-bs-target="#mounts-{{ c.id }}" aria-expanded="false">
+                                    <i class="bi bi-hdd-stack me-1"></i>{{ active_mounts|length }} / {{ c._backup_mounts|length }} Mounts aktiv
+                                    {% if c._excluded_mounts %}<span class="badge text-bg-warning ms-1">{{ c._excluded_mounts|length }} exkl.</span>{% endif %}
+                                </button>
                                 {% endif %}
                             </td>
                             <td class="text-muted small">{{ c.container_name }}</td>
@@ -442,14 +445,40 @@ function revealPassphrase() {
                                 {% endif %}
                             </td>
                         </tr>
+                        {% if c._backup_mounts %}
+                        <tr class="collapse" id="mounts-{{ c.id }}">
+                            <td colspan="5" class="bg-body-tertiary">
+                                <form method="post" action="/agents/{{ agent.id }}/containers/{{ c.id }}/mounts" class="m-0">
+                                    <p class="small text-muted mb-2"><strong>Mounts dieses Projekts</strong> — Häkchen entfernen um z.B. grosse Media-Pfade aus dem Backup zu nehmen. Speichern wirkt auf alle künftigen Backup-Läufe.</p>
+                                    <div class="row g-2">
+                                        {% for m in c._backup_mounts %}
+                                        <div class="col-md-12">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" name="include" value="{{ m.dest }}" id="mnt-{{ c.id }}-{{ loop.index }}" {% if m.dest not in c._excluded_mounts %}checked{% endif %}>
+                                                <label class="form-check-label small" for="mnt-{{ c.id }}-{{ loop.index }}">
+                                                    <code>{{ m.dest }}</code>
+                                                    <span class="text-muted">— {{ m.type }}{% if m.name %} <code class="text-muted">{{ m.name }}</code>{% endif %} in {{ m.container }}</span>
+                                                    {% if m.dest in c._excluded_mounts %}<span class="badge text-bg-warning ms-2">exkludiert</span>{% endif %}
+                                                </label>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="mt-2">
+                                        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Mount-Auswahl speichern</button>
+                                    </div>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
             <div class="card-footer">
-                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Auswahl speichern</button>
+                <button type="submit" class="btn btn-primary" form="enabled-form"><i class="bi bi-check-lg me-1"></i>Auswahl speichern</button>
             </div>
-        </form>
+        </div>
         {% else %}
         <div class="card-body text-muted">Noch keine Container vom Agent gemeldet.</div>
         {% endif %}
@@ -647,6 +676,24 @@ function toggleScheduleFields() {
                 <label for="archive" class="form-label">Archiv-Name</label>
                 <input type="text" name="archive" id="archive" class="form-control" placeholder="{{ agent.hostname }}-projekt-20260510T030000" required>
                 <div class="form-text">Format: <code>{{ agent.hostname }}-&lt;projekt&gt;-&lt;timestamp&gt;</code></div>
+            </div>
+            <div class="mb-3" style="max-width: 600px;">
+                <label for="sub_path" class="form-label">Pfad im Archiv (optional)</label>
+                <input type="text" name="sub_path" id="sub_path" class="form-control" placeholder="z.B. mnt/compose oder var/lib/postgresql/data">
+                <div class="form-text">
+                    Leer = gesamtes Archiv extrahieren. Typische Pfade im Archiv:
+                    <code>mnt/compose</code> für das Compose-Verzeichnis,
+                    oder ein Mount-Pfad wie <code>var/lib/postgresql/data</code>.
+                </div>
+            </div>
+            <div class="mb-3" style="max-width: 600px;">
+                <label for="host_target" class="form-label">Zielpfad auf dem Host (optional)</label>
+                <input type="text" name="host_target" id="host_target" class="form-control" placeholder="/tmp/dborg-restore oder /share/Public/restore">
+                <div class="form-text">
+                    Wenn gesetzt: Wiederherstellung direkt in diesen Host-Pfad (auf dem Agent-Server).
+                    Wenn leer: in das interne Agent-Volume — abrufbar mit
+                    <code>docker cp dborg-agent:/data/restore ./</code>.
+                </div>
             </div>
             <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>Wiederherstellen</button>
         </form>

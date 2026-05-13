@@ -82,6 +82,25 @@ case "$MODE" in
     list)    exec borgmatic --config "$CFG" list "$@" ;;
     rinfo)   exec borgmatic --config "$CFG" rinfo "$@" ;;
     restore) exec borgmatic --config "$CFG" restore "$@" ;;
+    extract)
+        # Direktes borg extract. Args: <archive> [subpath]
+        # Zielverzeichnis via DBORG_RESTORE_DIR (default /restore).
+        ARCHIVE=$1
+        SUBPATH=$2
+        TARGET="${DBORG_RESTORE_DIR:-/restore}"
+        if [ -z "$ARCHIVE" ]; then
+            echo "extract: kein Archiv-Name angegeben" >&2
+            exit 2
+        fi
+        mkdir -p "$TARGET"
+        cd "$TARGET"
+        echo "Extrahiere ${ARCHIVE} nach ${TARGET}${SUBPATH:+ (Pfad: $SUBPATH)}"
+        if [ -n "$SUBPATH" ]; then
+            exec borg extract --progress --list "$BORG_REPO::$ARCHIVE" "$SUBPATH"
+        else
+            exec borg extract --progress --list "$BORG_REPO::$ARCHIVE"
+        fi
+        ;;
     shell)   exec /bin/bash ;;
     *)       echo "Unknown mode: $MODE" >&2 ; exit 2 ;;
 esac

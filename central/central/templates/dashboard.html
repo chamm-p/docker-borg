@@ -22,6 +22,17 @@
                     <span class="badge text-bg-{{ 'success' if c.agent.status == 'online' else 'danger' }}">{{ c.agent.status }}</span>
                 </div>
 
+                {% if c.running_job %}
+                <a href="/jobs/{{ c.running_job.id }}" class="alert alert-info py-2 mb-3 d-flex align-items-center text-decoration-none position-relative" style="z-index: 2;">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <div class="flex-grow-1">
+                        <strong>{{ c.running_job.job_type }}</strong> läuft
+                        {% if c.running_job.started_at %}seit {{ c.running_job.started_at|relative }}{% else %}— Start steht aus{% endif %}
+                    </div>
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+                {% endif %}
+
                 <div class="row g-2 my-3 text-center">
                     <div class="col-4 stat-block">
                         <div class="stat-value">{{ c.enabled_count }}<span class="text-muted">/{{ c.backupable_count }}</span></div>
@@ -33,13 +44,18 @@
                     </div>
                     <div class="col-4 stat-block">
                         <div class="stat-value">
-                            {% if c.last_success and c.last_success.completed_at %}
-                            <span title="{{ c.last_success.completed_at|localtime }}">{{ c.last_success.completed_at|localtime_short }}</span>
+                            {% if c.last_backup and c.last_backup.completed_at %}
+                            <span title="{{ c.last_backup.completed_at|localtime }} — {{ c.last_backup.status }}">{{ c.last_backup.completed_at|localtime_short }}</span>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}
                         </div>
-                        <div class="stat-label">Letztes Backup</div>
+                        <div class="stat-label">
+                            Letztes Backup
+                            {% if c.last_backup %}
+                            <span class="badge text-bg-{{ 'success' if c.last_backup.status == 'success' else 'danger' if c.last_backup.status == 'failed' else 'secondary' }} ms-1">{{ c.last_backup.status }}</span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>

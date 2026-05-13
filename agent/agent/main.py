@@ -218,6 +218,7 @@ def _execute_job(job, containers, client: CentralClient):
                 targets = [c for c in containers if c.compose_project in job.containers]
 
             overrides = (job.params or {}).get("compose_dirs", {}) if job.params else {}
+            exclude_mounts_by_project = (job.params or {}).get("exclude_mounts", {}) if job.params else {}
             existing_projects = {c.compose_project for c in targets}
             for project, manual_dir in overrides.items():
                 if project not in existing_projects and project in (job.containers or []):
@@ -248,7 +249,10 @@ def _execute_job(job, containers, client: CentralClient):
                     stream("warning", f"{c.compose_project}: kein Pfad gesetzt, übersprungen")
                     continue
                 stream("info", f"→ {c.compose_project}")
-                r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m))
+                excludes = exclude_mounts_by_project.get(c.compose_project, [])
+                if excludes:
+                    stream("info", f"  exkludierte Mounts: {', '.join(excludes)}")
+                r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m), excluded_mounts=excludes)
                 for log in r.logs:
                     client.report_job(job.job_id, "running", logs=[log])
                 if r.success:
@@ -317,7 +321,10 @@ def _execute_job(job, containers, client: CentralClient):
 
         elif job.job_type == JobType.RESTORE:
             archive = job.params.get("archive", "")
-            r = worker.run_restore(archive, lambda m, lvl="info": stream(lvl, m))
+            sub_path = job.params.get("sub_path", "")
+            host_target = job.params.get("host_target", "")
+            r = worker.run_restore(archive, lambda m, lvl="info": stream(lvl, m),
+                                   sub_path=sub_path, host_target=host_target)
             for log in r.logs:
                 client.report_job(job.job_id, "running", logs=[log])
             client.report_job(
