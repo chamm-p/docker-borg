@@ -439,14 +439,19 @@ function revealPassphrase() {
                                 {% endif %}
                             </td>
                             <td>
-                                {% if not effective_dir %}
-                                <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>Pfad fehlt</span>
-                                {% elif c.compose_dir_accessible %}
-                                <span class="badge text-bg-success" title="Compose-Verzeichnis ist im Agent gemountet, Inhalt wird auf Wunsch zusätzlich gesichert"><i class="bi bi-check-circle me-1"></i>Compose-Dir gemountet</span>
-                                {% elif c._backup_mounts %}
-                                <span class="badge text-bg-info" title="Agent hat das Compose-Verzeichnis nicht gemountet. Backup läuft trotzdem über Volumes (--volumes-from), nur das Compose-Verzeichnis selbst (docker-compose.yml, .env, ./data) ist nicht im Archiv. Wenn das gewünscht ist: DBORG_HOST_BASE_DIR setzen und Host-Pfad ins agent /host/docker mounten."><i class="bi bi-info-circle me-1"></i>nur Volumes</span>
+                                {# Backup läuft sobald entweder ein Compose-Pfad gesetzt ist
+                                   (Worker bind-mountet ihn direkt vom Docker-Host) ODER externe
+                                   Mounts vorhanden sind ODER DB-Hooks (dumps gehen ins Archiv). #}
+                                {% if effective_dir or c._backup_mounts or c._db_hooks %}
+                                    {% if effective_dir and c.compose_dir_accessible %}
+                                    <span class="badge text-bg-success" title="Backup bereit — Compose-Verzeichnis ist auch im Agent gemountet, daher kann der Inhalt im UI gelistet werden"><i class="bi bi-check-circle me-1"></i>bereit</span>
+                                    {% elif effective_dir %}
+                                    <span class="badge text-bg-success" title="Backup bereit — Compose-Verzeichnis ist nicht im Agent gemountet, daher kein Inhaltsbrowser im UI, das Backup selbst läuft trotzdem (Worker bind-mountet den Pfad direkt vom Docker-Host)."><i class="bi bi-check-circle me-1"></i>bereit <i class="bi bi-eye-slash small ms-1 text-muted"></i></span>
+                                    {% else %}
+                                    <span class="badge text-bg-info" title="Backup nur über externe Volumes/DB-Hooks — Compose-Verzeichnis ist nicht gesetzt"><i class="bi bi-info-circle me-1"></i>nur Volumes</span>
+                                    {% endif %}
                                 {% else %}
-                                <span class="badge text-bg-warning" title="Weder Compose-Verzeichnis im Agent gemountet, noch externe Volumes — es würde nichts gesichert"><i class="bi bi-exclamation-triangle me-1"></i>nichts zu sichern</span>
+                                <span class="badge text-bg-warning" title="Kein Compose-Pfad, keine externen Volumes, keine DB-Hooks — es würde nichts gesichert"><i class="bi bi-exclamation-triangle me-1"></i>nichts zu sichern</span>
                                 {% endif %}
                             </td>
                         </tr>
