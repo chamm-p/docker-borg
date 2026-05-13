@@ -99,7 +99,22 @@ def cancel_active() -> bool:
         return False
 
 
-def _build_borgmatic_config(container: ContainerInfo, repo_path: str, archive_prefix: str, excluded_mounts: set | None = None) -> dict:
+_DB_DEFAULT_PORTS = {"postgresql": 5432, "mariadb": 3306, "mysql": 3306, "mongodb": 27017}
+_DB_BORGMATIC_KEY = {
+    "postgresql": "postgresql_databases",
+    "mariadb": "mariadb_databases",
+    "mysql": "mysql_databases",
+    "mongodb": "mongodb_databases",
+}
+
+
+def _build_borgmatic_config(
+    container: ContainerInfo,
+    repo_path: str,
+    archive_prefix: str,
+    excluded_mounts: set | None = None,
+    db_hooks: list[dict] | None = None,
+) -> dict:
     """Produces a borgmatic config dict for one compose project."""
     excluded = set(excluded_mounts or [])
     sources: list[str] = []
@@ -122,6 +137,33 @@ def _build_borgmatic_config(container: ContainerInfo, repo_path: str, archive_pr
             "**/.venv", "**/venv", "**/.cache", "**/.DS_Store",
         ],
     }
+
+    # Datenbank-Hooks: borgmatic ruft pg_dump/mysqldump/mongodump und schiebt
+    # den Dump direkt als Stream ins Archiv.
+    grouped: dict[str, list[dict]] = {}
+    for h in (db_hooks or []):
+        t = h.get("type", "")
+        key = _DB_BORGMATIC_KEY.get(t)
+        if not key:
+            continue
+        entry: dict = {
+            "name": h.get("name") or "",
+            "hostname": h.get("hostname") or "",
+        }
+        port = int(h.get("port") or 0) or _DB_DEFAULT_PORTS.get(t, 0)
+        if port:
+            entry["port"] = port
+        if h.get("username"):
+            entry["username"] = h["username"]
+        if h.get("password"):
+            entry["password"] = h["password"]
+        if t == "postgresql":
+            entry["format"] = "custom"  # pg_dump custom format = restorable per table
+        grouped.setdefault(key, []).append(entry)
+
+    for key, items in grouped.items():
+        config[key] = items
+
     return config
 
 
@@ -360,7 +402,9 @@ def _spawn_worker(
     return exit_code, {"config_token": job_token}
 
 
-def run_backup(container: ContainerInfo, on_log, excluded_mounts: list[str] | None = None) -> WorkerResult:
+def run_backup(container: ContainerInfo, on_log,
+               excluded_mounts: list[str] | None = None,
+               db_hooks: list[dict] | None = None) -> WorkerResult:
     """Run a backup for one compose project via an ephemeral borgmatic worker."""
     start = time.time()
     docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
@@ -373,7 +417,9 @@ def run_backup(container: ContainerInfo, on_log, excluded_mounts: list[str] | No
 
         archive_prefix = f"{settings.agent_name}-{container.compose_project}"
         repo_path = _resolve_repo_path()
-        config = _build_borgmatic_config(container, repo_path, archive_prefix, excluded_mounts=set(excluded_mounts or []))
+        config = _build_borgmatic_config(container, repo_path, archive_prefix,
+                                          excluded_mounts=set(excluded_mounts or []),
+                                          db_hooks=db_hooks)
 
         extra_volumes: dict = {}
         if container.compose_dir:

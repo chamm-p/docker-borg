@@ -126,6 +126,27 @@ class JobLog(Base):
     job: Mapped["Job"] = relationship(back_populates="logs")
 
 
+class DatabaseHook(Base):
+    """Per-Container DB-Dump-Konfiguration.
+
+    Beim Backup ruft borgmatic vor dem borg create automatisch das
+    passende Dump-Tool auf (pg_dump, mysqldump, mongodump). Der Dump
+    landet als Stream im Archive — kein temporäres File auf Disk.
+    """
+    __tablename__ = "database_hooks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    container_id: Mapped[int] = mapped_column(Integer, ForeignKey("containers.id", ondelete="CASCADE"), index=True)
+    db_type: Mapped[str] = mapped_column(String(20))  # postgresql | mariadb | mysql | mongodb
+    db_name: Mapped[str] = mapped_column(String(255))
+    hostname: Mapped[str] = mapped_column(String(255))  # DB-Container-Name im Compose-Netz
+    port: Mapped[int] = mapped_column(Integer, default=0)  # 0 = Default je Typ
+    username: Mapped[str] = mapped_column(String(255), default="")
+    password: Mapped[str] = mapped_column(String(500), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class AppSetting(Base):
     __tablename__ = "settings"
 

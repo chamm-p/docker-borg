@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Agent, Container, Job, JobLog, Schedule
+from ..models import Agent, Container, DatabaseHook, Job, JobLog, Schedule
 from ..services.admin import get_admin_password, set_admin_password
 from ..services.connection_check import check_connection, record_result
 from ..services.format import localtime, localtime_short, relative
@@ -102,6 +102,7 @@ def agent_detail(
             c._excluded_mounts = set(json.loads(c.excluded_mounts)) if c.excluded_mounts else set()
         except (json.JSONDecodeError, TypeError):
             c._excluded_mounts = set()
+        c._db_hooks = db.query(DatabaseHook).filter(DatabaseHook.container_id == c.id).all()
 
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
     schedules = db.query(Schedule).filter(Schedule.agent_id == agent_id).all()
@@ -347,6 +348,50 @@ async def update_container_mounts(
     return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
 
 
+@router.post("/agents/{agent_id}/containers/{container_id}/db-hook")
+def add_db_hook(
+    agent_id: int,
+    container_id: int,
+    db_type: str = Form(...),
+    db_name: str = Form(...),
+    hostname: str = Form(...),
+    port: int = Form(0),
+    username: str = Form(""),
+    password: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    row = db.query(Container).filter(Container.id == container_id, Container.agent_id == agent_id).first()
+    if not row:
+        return HTMLResponse("Container nicht gefunden", status_code=404)
+    if db_type not in ("postgresql", "mariadb", "mysql", "mongodb"):
+        return RedirectResponse(f"/agents/{agent_id}?tab=containers&error=bad_db_type", status_code=303)
+    hook = DatabaseHook(
+        container_id=container_id,
+        db_type=db_type,
+        db_name=db_name.strip(),
+        hostname=hostname.strip(),
+        port=port or 0,
+        username=username.strip(),
+        password=password,
+        enabled=True,
+    )
+    db.add(hook)
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
+
+
+@router.post("/agents/{agent_id}/db-hook/{hook_id}/delete")
+def delete_db_hook(agent_id: int, hook_id: int, db: Session = Depends(get_db)):
+    hook = db.query(DatabaseHook).filter(DatabaseHook.id == hook_id).first()
+    if hook:
+        # Validate ownership via container → agent chain
+        ctr = db.query(Container).filter(Container.id == hook.container_id, Container.agent_id == agent_id).first()
+        if ctr:
+            db.delete(hook)
+            db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
+
+
 @router.post("/agents/{agent_id}/containers")
 async def update_container_selection(
     agent_id: int,
@@ -438,11 +483,30 @@ def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
             ex = []
         if ex:
             excludes[c.compose_project] = ex
+    # DB-Hooks pro Container einsammeln
+    db_hooks_by_project: dict[str, list[dict]] = {}
+    for c in enabled:
+        hooks = db.query(DatabaseHook).filter(DatabaseHook.container_id == c.id, DatabaseHook.enabled == True).all()  # noqa: E712
+        if not hooks:
+            continue
+        db_hooks_by_project.setdefault(c.compose_project, [])
+        for h in hooks:
+            db_hooks_by_project[c.compose_project].append({
+                "type": h.db_type,
+                "name": h.db_name,
+                "hostname": h.hostname,
+                "port": h.port,
+                "username": h.username,
+                "password": h.password,
+            })
+
     params: dict = {}
     if overrides:
         params["compose_dirs"] = overrides
     if excludes:
         params["exclude_mounts"] = excludes
+    if db_hooks_by_project:
+        params["db_hooks"] = db_hooks_by_project
     return projects, params
 
 

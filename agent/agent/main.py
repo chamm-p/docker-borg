@@ -219,6 +219,7 @@ def _execute_job(job, containers, client: CentralClient):
 
             overrides = (job.params or {}).get("compose_dirs", {}) if job.params else {}
             exclude_mounts_by_project = (job.params or {}).get("exclude_mounts", {}) if job.params else {}
+            db_hooks_by_project = (job.params or {}).get("db_hooks", {}) if job.params else {}
             existing_projects = {c.compose_project for c in targets}
             for project, manual_dir in overrides.items():
                 if project not in existing_projects and project in (job.containers or []):
@@ -252,7 +253,11 @@ def _execute_job(job, containers, client: CentralClient):
                 excludes = exclude_mounts_by_project.get(c.compose_project, [])
                 if excludes:
                     stream("info", f"  exkludierte Mounts: {', '.join(excludes)}")
-                r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m), excluded_mounts=excludes)
+                db_hooks = db_hooks_by_project.get(c.compose_project, [])
+                if db_hooks:
+                    stream("info", f"  Datenbanken: {', '.join(h['type'] + '/' + h['name'] for h in db_hooks)}")
+                r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m),
+                                       excluded_mounts=excludes, db_hooks=db_hooks)
                 for log in r.logs:
                     client.report_job(job.job_id, "running", logs=[log])
                 if r.success:
