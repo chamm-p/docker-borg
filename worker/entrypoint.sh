@@ -77,7 +77,7 @@ case "$MODE" in
         fi
         exec borgmatic --config "$CFG" --stats -v 1 --progress create "$@"
         ;;
-    check)   exec borgmatic --config "$CFG" --stats -v 1 check  "$@" ;;
+    check)   exec borgmatic --config "$CFG" --stats -v 2 --progress check "$@" ;;
     prune)   exec borgmatic --config "$CFG" --stats -v 1 prune  "$@" ;;
     list)    exec borgmatic --config "$CFG" list "$@" ;;
     rinfo)   exec borgmatic --config "$CFG" rinfo "$@" ;;
