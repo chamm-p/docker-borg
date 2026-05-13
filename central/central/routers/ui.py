@@ -217,6 +217,27 @@ def check_target(
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
                        local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
+    db.commit()
+
+    # Für SCP delegieren: der Test muss vom Agent aus laufen (nur er sieht das
+    # Netz wo der SSH-Server steht; Central kann auf einem völlig anderen
+    # Netz hängen). Wir erzeugen denselben scp_test-Job wie der
+    # "SSH-Verbindung testen"-Button und springen direkt aufs Live-Log.
+    if backup_type == "scp":
+        job = Job(
+            agent_id=agent_id,
+            job_type="scp_test",
+            params=json.dumps({
+                "host": agent.scp_host or "",
+                "user": agent.scp_user or "",
+                "port": agent.scp_port or 22,
+            }),
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
     ok, msg = check_connection(agent)
     record_result(agent, ok, msg)
     db.commit()
