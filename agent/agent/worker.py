@@ -170,6 +170,10 @@ def _build_borgmatic_config(
             entry["password"] = h["password"]
         if t == "postgresql":
             entry["format"] = "custom"  # pg_dump custom format = restorable per table
+            # Server-Version automatisch erkennen und passenden Client wählen
+            # (pg_restore 17 crashed gegen PG <17 Server, transaction_timeout)
+            entry["pg_dump_command"] = "dborg-pg-shim pg_dump"
+            entry["pg_restore_command"] = "dborg-pg-shim pg_restore"
         grouped.setdefault(key, []).append(entry)
 
     for key, items in grouped.items():
