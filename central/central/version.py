@@ -1,4 +1,4 @@
-__version__ = "0.5.21"
+__version__ = "0.5.22"
 # v0.5.20 — Stale-State-Cleanup im UI:
 # - Connection-Fehler-Banner blendet sich aus, sobald ein neueres erfolg-
 #   reiches backup/verify/archive_list existiert (Banner hängt nicht mehr

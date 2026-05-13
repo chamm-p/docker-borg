@@ -420,10 +420,12 @@ function revealPassphrase() {
                                 {% if c._entries or c._backup_mounts or c._db_hooks %}
                                 {% set _entries_active = c._entries|rejectattr('name', 'in', c._excluded_entries)|list %}
                                 {% set _mounts_active = c._backup_mounts|rejectattr('dest', 'in', c._excluded_mounts)|list %}
+                                {% set _excluded_total = (c._excluded_entries|length) + (c._excluded_mounts|length) %}
                                 <button class="btn btn-link btn-sm p-0 mt-1 small text-muted" type="button" data-bs-toggle="collapse" data-bs-target="#mounts-{{ c.id }}" aria-expanded="false">
                                     <i class="bi bi-list-nested me-1"></i>Inhalt &amp; Mounts
                                     {% if c._entries %}<span class="text-muted">— {{ _entries_active|length }}/{{ c._entries|length }} Verz./Files</span>{% endif %}
                                     {% if c._backup_mounts %}<span class="text-muted">+ {{ _mounts_active|length }}/{{ c._backup_mounts|length }} ext. Mounts</span>{% endif %}
+                                    {% if _excluded_total > 0 %}<span class="badge text-bg-warning ms-1" title="{{ _excluded_total }} Eintrag/Mount ausgeschlossen — aufklappen zum Bearbeiten"><i class="bi bi-slash-circle me-1"></i>{{ _excluded_total }} exkl.</span>{% endif %}
                                     {% if c._db_hooks %}<span class="badge text-bg-info ms-1"><i class="bi bi-database"></i> {{ c._db_hooks|length }} DB</span>{% endif %}
                                 </button>
                                 {% endif %}
@@ -470,14 +472,17 @@ function revealPassphrase() {
                                     <p class="small text-muted mb-2"><strong><i class="bi bi-folder me-1"></i>Inhalt im Compose-Verzeichnis</strong> <code class="small">{{ c.manual_compose_dir or c.compose_dir }}</code> — Standard: alles drin. Häkchen entfernen, um z.B. ein großes Media-Verzeichnis auszuschließen.</p>
                                     <div class="row g-1 mb-3">
                                         {% for e in c._entries %}
+                                        {% set _is_excl = e.name in c._excluded_entries %}
                                         <div class="col-md-12">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="include_entry" value="{{ e.name }}" id="ent-{{ c.id }}-{{ loop.index }}" {% if e.name not in c._excluded_entries %}checked{% endif %}>
-                                                <label class="form-check-label small" for="ent-{{ c.id }}-{{ loop.index }}">
-                                                    {% if e.type == 'dir' %}<i class="bi bi-folder-fill text-warning me-1"></i>{% else %}<i class="bi bi-file-earmark text-muted me-1"></i>{% endif %}
+                                            <div class="form-check {% if _is_excl %}bg-warning-subtle rounded px-1{% endif %}">
+                                                <input class="form-check-input" type="checkbox" name="include_entry" value="{{ e.name }}" id="ent-{{ c.id }}-{{ loop.index }}" {% if not _is_excl %}checked{% endif %}>
+                                                <label class="form-check-label small {% if _is_excl %}text-decoration-line-through text-muted{% endif %}" for="ent-{{ c.id }}-{{ loop.index }}">
+                                                    {% if _is_excl %}<i class="bi bi-slash-circle text-warning me-1"></i>
+                                                    {% elif e.type == 'dir' %}<i class="bi bi-folder-fill text-warning me-1"></i>
+                                                    {% else %}<i class="bi bi-file-earmark text-muted me-1"></i>{% endif %}
                                                     <code>{{ e.name }}</code>
                                                     <span class="text-muted ms-1">{{ e.size_bytes|bytesize }}{% if not e.size_complete %} (geschätzt){% endif %}</span>
-                                                    {% if e.name in c._excluded_entries %}<span class="badge text-bg-warning ms-2">exkl.</span>{% endif %}
+                                                    {% if _is_excl %}<span class="badge text-bg-warning ms-2"><i class="bi bi-slash-circle me-1"></i>nicht gesichert</span>{% endif %}
                                                 </label>
                                             </div>
                                         </div>
@@ -489,14 +494,16 @@ function revealPassphrase() {
                                     <p class="small text-muted mb-2"><strong><i class="bi bi-hdd-stack me-1"></i>Externe Mounts</strong> — Volumes &amp; Bind-Mounts außerhalb des Compose-Verzeichnisses. Hier sitzt typischerweise die Plex-Mediathek oder ähnliches Schweres.</p>
                                     <div class="row g-1 mb-3">
                                         {% for m in c._backup_mounts %}
+                                        {% set _is_excl = m.dest in c._excluded_mounts %}
                                         <div class="col-md-12">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="include" value="{{ m.dest }}" id="mnt-{{ c.id }}-{{ loop.index }}" {% if m.dest not in c._excluded_mounts %}checked{% endif %}>
-                                                <label class="form-check-label small" for="mnt-{{ c.id }}-{{ loop.index }}">
+                                            <div class="form-check {% if _is_excl %}bg-warning-subtle rounded px-1{% endif %}">
+                                                <input class="form-check-input" type="checkbox" name="include" value="{{ m.dest }}" id="mnt-{{ c.id }}-{{ loop.index }}" {% if not _is_excl %}checked{% endif %}>
+                                                <label class="form-check-label small {% if _is_excl %}text-decoration-line-through text-muted{% endif %}" for="mnt-{{ c.id }}-{{ loop.index }}">
+                                                    {% if _is_excl %}<i class="bi bi-slash-circle text-warning me-1"></i>{% endif %}
                                                     <code>{{ m.dest }}</code>
                                                     <span class="text-muted ms-1">{{ m.size_bytes|bytesize }}{% if not m.size_complete %} (?){% endif %}</span>
                                                     <span class="text-muted">— {{ m.type }}{% if m.name %} <code class="text-muted">{{ m.name }}</code>{% endif %} in {{ m.container }}</span>
-                                                    {% if m.dest in c._excluded_mounts %}<span class="badge text-bg-warning ms-2">exkl.</span>{% endif %}
+                                                    {% if _is_excl %}<span class="badge text-bg-warning ms-2"><i class="bi bi-slash-circle me-1"></i>nicht gesichert</span>{% endif %}
                                                 </label>
                                             </div>
                                         </div>
