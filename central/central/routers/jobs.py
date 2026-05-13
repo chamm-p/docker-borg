@@ -65,6 +65,11 @@ def update_job_status(
         job.completed_at = datetime.utcnow()
         if job.job_type == "scp_install_key":
             job.params = "{}"
+        if job.job_type == "archive_list" and update.status == "success" and update.result:
+            archives = update.result.get("archives") or []
+            if isinstance(archives, list):
+                agent.cached_archives = json.dumps(archives)
+                agent.cached_archives_at = datetime.utcnow()
 
     if update.result:
         job.result = json.dumps(update.result)

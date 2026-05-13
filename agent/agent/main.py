@@ -309,6 +309,16 @@ def _execute_job(job, containers, client: CentralClient):
                 logs=[LogEntry("info" if ok else "error", msg)],
             )
 
+        elif job.job_type == JobType.ARCHIVE_LIST:
+            r, archives = worker.run_list_archives(lambda m, lvl="info": stream(lvl, m))
+            for log in r.logs:
+                client.report_job(job.job_id, "running", logs=[log])
+            client.report_job(
+                job.job_id,
+                "success" if r.success else "failed",
+                result={"archives": archives},
+            )
+
         elif job.job_type == JobType.VERIFY:
             r = worker.run_check(lambda m, lvl="info": stream(lvl, m))
             for log in r.logs:

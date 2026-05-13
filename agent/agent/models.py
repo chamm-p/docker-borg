@@ -13,6 +13,7 @@ class JobType(str, Enum):
     VERIFY = "verify"
     SCP_TEST = "scp_test"
     SCP_INSTALL_KEY = "scp_install_key"
+    ARCHIVE_LIST = "archive_list"
 
 
 class JobStatus(str, Enum):

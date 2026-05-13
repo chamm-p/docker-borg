@@ -665,39 +665,89 @@ function toggleScheduleFields() {
     </div>
 </div>
 
-<div class="card">
-    <div class="card-header">
-        <h5 class="mb-1"><i class="bi bi-arrow-counterclockwise me-2"></i>Wiederherstellung</h5>
-        <p class="text-muted small mb-0">Stelle einzelne Archive in <code>/tmp/restore</code> auf dem Agent wieder her.</p>
-    </div>
-    <div class="card-body">
-        <form method="post" action="/agents/{{ agent.id }}/restore">
-            <div class="mb-3" style="max-width: 600px;">
-                <label for="archive" class="form-label">Archiv-Name</label>
-                <input type="text" name="archive" id="archive" class="form-control" placeholder="{{ agent.hostname }}-projekt-20260510T030000" required>
-                <div class="form-text">Format: <code>{{ agent.hostname }}-&lt;projekt&gt;-&lt;timestamp&gt;</code></div>
-            </div>
-            <div class="mb-3" style="max-width: 600px;">
-                <label for="sub_path" class="form-label">Pfad im Archiv (optional)</label>
-                <input type="text" name="sub_path" id="sub_path" class="form-control" placeholder="z.B. mnt/compose oder var/lib/postgresql/data">
-                <div class="form-text">
-                    Leer = gesamtes Archiv extrahieren. Typische Pfade im Archiv:
-                    <code>mnt/compose</code> für das Compose-Verzeichnis,
-                    oder ein Mount-Pfad wie <code>var/lib/postgresql/data</code>.
-                </div>
-            </div>
-            <div class="mb-3" style="max-width: 600px;">
-                <label for="host_target" class="form-label">Zielpfad auf dem Host (optional)</label>
-                <input type="text" name="host_target" id="host_target" class="form-control" placeholder="/tmp/dborg-restore oder /share/Public/restore">
-                <div class="form-text">
-                    Wenn gesetzt: Wiederherstellung direkt in diesen Host-Pfad (auf dem Agent-Server).
-                    Wenn leer: in das interne Agent-Volume — abrufbar mit
-                    <code>docker cp dborg-agent:/data/restore ./</code>.
-                </div>
-            </div>
-            <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise me-1"></i>Wiederherstellen</button>
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <h5 class="mb-1"><i class="bi bi-archive me-2"></i>Archive im Repository</h5>
+            <p class="text-muted small mb-0">
+                {% if archives_at %}
+                Stand: {{ archives_at|localtime }} — {{ archives|length }} Archive
+                {% else %}
+                Noch nicht abgerufen — klicke „Aktualisieren" um die Liste vom Backup-Server zu holen.
+                {% endif %}
+            </p>
+        </div>
+        <form method="post" action="/agents/{{ agent.id }}/archives/refresh">
+            <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise me-1"></i>Aktualisieren</button>
         </form>
     </div>
+    {% if archives %}
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr><th>Archiv</th><th>Projekt</th><th>Erstellt</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for a in archives %}
+                {% set parts = a.name.rsplit('-', 1) %}
+                {% set name_no_ts = parts[0] %}
+                {% set ts = parts[1] if parts|length > 1 else '' %}
+                {% set project = name_no_ts.replace(agent.hostname + '-', '', 1) if name_no_ts.startswith(agent.hostname + '-') else name_no_ts %}
+                <tr>
+                    <td><code class="small">{{ a.name }}</code></td>
+                    <td><strong>{{ project }}</strong></td>
+                    <td class="text-muted small">{{ a.start }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#restore-{{ loop.index }}">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Wiederherstellen
+                        </button>
+                    </td>
+                </tr>
+                <tr class="collapse" id="restore-{{ loop.index }}">
+                    <td colspan="4" class="bg-body-tertiary">
+                        <form method="post" action="/agents/{{ agent.id }}/restore" class="p-2">
+                            <input type="hidden" name="archive" value="{{ a.name }}">
+                            <div class="mb-3">
+                                <label class="form-label">Was wiederherstellen</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="sub_path" id="sp-{{ loop.index }}-all" value="" checked>
+                                    <label class="form-check-label" for="sp-{{ loop.index }}-all">
+                                        <strong>Gesamtes Archiv</strong> (Compose-Verzeichnis + alle Mounts)
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="sub_path" id="sp-{{ loop.index }}-compose" value="mnt/compose">
+                                    <label class="form-check-label" for="sp-{{ loop.index }}-compose">
+                                        <strong>Nur Compose-Verzeichnis</strong> <code class="small">mnt/compose</code>
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="sub_path" id="sp-{{ loop.index }}-custom" value="__custom__">
+                                    <label class="form-check-label" for="sp-{{ loop.index }}-custom">
+                                        Spezifischer Pfad:
+                                    </label>
+                                    <input type="text" name="sub_path_custom" class="form-control form-control-sm d-inline-block ms-2" style="width: 320px;" placeholder="z.B. var/lib/postgresql/data">
+                                </div>
+                            </div>
+                            <div class="mb-3" style="max-width: 600px;">
+                                <label class="form-label">Zielpfad auf dem Host (optional)</label>
+                                <input type="text" name="host_target" class="form-control form-control-sm" placeholder="/share/Public/restore — leer = ins Agent-Volume">
+                                <div class="form-text">
+                                    Wenn leer: Restore landet im Agent-Daten-Volume unter <code>/data/restore</code>,
+                                    abrufbar mit <code>docker cp dborg-agent:/data/restore ./</code>.
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>Wiederherstellen starten</button>
+                            <button type="button" class="btn btn-link btn-sm text-muted" data-bs-toggle="collapse" data-bs-target="#restore-{{ loop.index }}">Abbrechen</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 

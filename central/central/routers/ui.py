@@ -113,6 +113,12 @@ def agent_detail(
         .first()
     )
 
+    try:
+        archives = json.loads(agent.cached_archives) if agent.cached_archives else []
+    except (json.JSONDecodeError, TypeError):
+        archives = []
+    archives.sort(key=lambda a: a.get("start", ""), reverse=True)
+
     return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": agent,
         "containers": containers,
@@ -121,6 +127,8 @@ def agent_detail(
         "tab": tab,
         "traffic_light": _agent_traffic_light(agent, last_job),
         "last_verify": last_verify,
+        "archives": archives,
+        "archives_at": agent.cached_archives_at,
     })
 
 
@@ -460,6 +468,19 @@ def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
+@router.post("/agents/{agent_id}/archives/refresh")
+def refresh_archives(agent_id: int, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    ensure_agent_passphrase(agent, db)
+    job = Job(agent_id=agent_id, job_type="archive_list")
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
 @router.post("/agents/{agent_id}/verify")
 def trigger_verify(
     agent_id: int,
@@ -486,6 +507,7 @@ def trigger_restore(
     agent_id: int,
     archive: str = Form(...),
     sub_path: str = Form(""),
+    sub_path_custom: str = Form(""),
     host_target: str = Form(""),
     db: Session = Depends(get_db),
 ):
@@ -493,12 +515,14 @@ def trigger_restore(
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     ensure_agent_passphrase(agent, db)
+    # Sentinel: "__custom__" radio selected → take the freitext field
+    effective_sub_path = sub_path_custom.strip() if sub_path == "__custom__" else sub_path.strip()
     job = Job(
         agent_id=agent_id,
         job_type="restore",
         params=json.dumps({
             "archive": archive,
-            "sub_path": sub_path.strip(),
+            "sub_path": effective_sub_path,
             "host_target": host_target.strip(),
         }),
     )

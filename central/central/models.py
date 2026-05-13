@@ -38,6 +38,9 @@ class Agent(Base):
 
     ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    cached_archives: Mapped[str] = mapped_column(Text, default="[]")
+    cached_archives_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     containers: Mapped[list["Container"]] = relationship(back_populates="agent", cascade="all, delete-orphan")

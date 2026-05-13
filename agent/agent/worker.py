@@ -422,6 +422,129 @@ def run_check(on_log) -> WorkerResult:
         docker_client.close()
 
 
+def run_list_archives(on_log) -> tuple[WorkerResult, list[dict]]:
+    """Listet alle Archive im Repo. Gibt (Result, parsed_archives) zurück.
+    parsed_archives = [{name, start, end, hostname, ...}, ...]
+    """
+    import json as _json
+    import subprocess as _sp
+    start = time.time()
+    docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+    archives: list[dict] = []
+    output_lines: list[str] = []
+
+    try:
+        config = _minimal_config(_resolve_repo_path())
+        # Wir nutzen mode=list — entrypoint ruft borgmatic list (text). Für JSON
+        # umgehen wir borgmatic und rufen borg list direkt via "shell"-Pfad nicht;
+        # einfacher: lasse borgmatic stdout an uns durch und parse JSON.
+        # Eleganter: spezielle mode "list-json". Vorerst nutzen wir borg direkt:
+        token = uuid.uuid4().hex[:12]
+        cfg_dir = Path("/data/shared") / token
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        _write_yaml(config, cfg_dir / "config.yaml")
+
+        env = {
+            "BORG_PASSPHRASE": settings.borg_passphrase or "",
+            "BORG_RELOCATED_REPO_ACCESS_IS_OK": "yes",
+            "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK": "yes",
+            "BORG_CACHE_DIR": "/data/borg-cache",
+            "BORG_CONFIG_DIR": "/data/borg-config",
+            "BORG_REPO": _resolve_repo_path(),
+            "TZ": os.environ.get("TZ", "UTC"),
+        }
+        if settings.backup_type == "scp":
+            env["BORG_RSH"] = (
+                "ssh -i /data/ssh/id_ed25519 "
+                "-o UserKnownHostsFile=/data/ssh/known_hosts "
+                "-o StrictHostKeyChecking=accept-new -o BatchMode=yes"
+            )
+        if settings.backup_type == "webdav":
+            env["DBORG_WEBDAV_URL"] = settings.webdav_url or ""
+            env["DBORG_WEBDAV_USER"] = settings.webdav_user or ""
+            env["DBORG_WEBDAV_PASSWORD"] = settings.webdav_password or ""
+            env["DBORG_WEBDAV_VERIFY_SSL"] = "true" if settings.webdav_verify_ssl else "false"
+
+        volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/data", "mode": "rw"}}
+        if settings.backup_type == "local" and settings.local_path:
+            volumes[settings.local_path] = {"bind": "/mnt/repo", "mode": "rw"}
+
+        cap_add: list[str] = []
+        devices: list[str] = []
+        security_opt: list[str] = []
+        if settings.backup_type == "webdav":
+            cap_add = ["SYS_ADMIN"]
+            devices = ["/dev/fuse:/dev/fuse"]
+            security_opt = ["apparmor=unconfined"]
+
+        # borg list --json (kein borgmatic — schneller, struktiert)
+        on_log("Hole Archiv-Liste via borg list --json", "info")
+        worker = docker_client.containers.run(
+            image=WORKER_IMAGE,
+            entrypoint="borg",
+            command=["list", "--json"],
+            detach=True,
+            stdin_open=False,
+            tty=False,
+            environment=env,
+            volumes=volumes,
+            mem_limit="256m",
+            memswap_limit="256m",
+            cap_add=cap_add,
+            devices=devices,
+            security_opt=security_opt,
+        )
+        try:
+            for raw in worker.logs(stream=True, follow=True, stdout=True, stderr=True):
+                try:
+                    text = raw.decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+                output_lines.append(text)
+            worker.reload()
+            exit_code = worker.attrs.get("State", {}).get("ExitCode", -1)
+        finally:
+            try:
+                worker.remove(force=True)
+            except Exception:
+                pass
+            try:
+                shutil.rmtree(cfg_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+        full_output = "".join(output_lines)
+        duration = round(time.time() - start, 2)
+
+        if exit_code != 0:
+            on_log(f"borg list fehlgeschlagen (exit {exit_code}): {full_output[:300]}", "error")
+            return (
+                WorkerResult(False, JobResult(duration_seconds=duration),
+                             [LogEntry("error", f"borg list exit {exit_code}")]),
+                [],
+            )
+
+        try:
+            data = _json.loads(full_output)
+            archives = data.get("archives", [])
+        except (_json.JSONDecodeError, KeyError) as e:
+            on_log(f"Konnte JSON nicht parsen: {e}", "error")
+            return (
+                WorkerResult(False, JobResult(duration_seconds=duration),
+                             [LogEntry("error", f"JSON parse failed: {e}")]),
+                [],
+            )
+
+        on_log(f"{len(archives)} Archive gefunden", "info")
+        return (
+            WorkerResult(True, JobResult(nfiles=len(archives), duration_seconds=duration),
+                         [LogEntry("info", f"{len(archives)} Archive gefunden")]),
+            archives,
+        )
+    finally:
+        docker_client.close()
+
+
 def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "") -> WorkerResult:
     """Extrahiert ein Archiv (oder einen Sub-Pfad).
 
