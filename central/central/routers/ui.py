@@ -339,6 +339,15 @@ def delete_schedule(agent_id: int, schedule_id: int, db: Session = Depends(get_d
     return RedirectResponse(f"/agents/{agent_id}?tab=schedule", status_code=303)
 
 
+def ensure_agent_passphrase(agent: Agent, db: Session) -> bool:
+    """Returns True if a fresh passphrase was just generated for this agent."""
+    if agent.borg_passphrase:
+        return False
+    agent.borg_passphrase = secrets.token_urlsafe(32)
+    db.commit()
+    return True
+
+
 def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
     enabled = (
         db.query(Container)
@@ -352,6 +361,10 @@ def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
 
 @router.post("/agents/{agent_id}/backup")
 def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    fresh_pp = ensure_agent_passphrase(agent, db)
     projects, params = _backup_params_for(agent_id, db)
     job = Job(
         agent_id=agent_id,
@@ -362,6 +375,10 @@ def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     db.refresh(job)
+    if fresh_pp:
+        db.add(JobLog(job_id=job.id, level="warning",
+                      message="Passphrase wurde automatisch erzeugt. Bitte unter Verschlüsselung → Anzeigen / Download sichern, sonst ist im Disaster-Fall ein Restore unmöglich."))
+        db.commit()
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
@@ -371,6 +388,10 @@ def trigger_verify(
     verify_data: bool = Form(False),
     db: Session = Depends(get_db),
 ):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    ensure_agent_passphrase(agent, db)
     job = Job(
         agent_id=agent_id,
         job_type="verify",
@@ -388,6 +409,10 @@ def trigger_restore(
     archive: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    ensure_agent_passphrase(agent, db)
     job = Job(
         agent_id=agent_id,
         job_type="restore",

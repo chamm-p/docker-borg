@@ -318,11 +318,15 @@ function toggleTargetType() {
         <p class="text-muted small mb-0">Die Passphrase verschlüsselt das gesamte Borg-Repository. Bei Verlust sind alle Backups unwiederbringlich verloren.</p>
     </div>
     <div class="card-body">
+        <div class="alert alert-info py-2 mb-4">
+            <i class="bi bi-info-circle-fill me-1"></i>
+            <strong>Automatische Verwaltung:</strong> Falls du hier nichts setzt, generiert die Zentrale spätestens beim ersten Backup eine sichere 32-Zeichen-Passphrase und speichert sie. Beim Verify/Restore wird sie automatisch verwendet — du brauchst sie nur extern (Disaster-Recovery, DB verloren). Trotzdem <strong>einmal Anzeigen + Download</strong> zur Sicherheit.
+        </div>
         <form method="post" action="/agents/{{ agent.id }}/encryption">
             <div class="mb-3" style="max-width: 480px;">
                 <label for="borg_passphrase" class="form-label">Passphrase</label>
                 <input type="password" name="borg_passphrase" id="borg_passphrase" class="form-control" value="{{ '********' if agent.borg_passphrase else '' }}" placeholder="leer lassen für automatisch generierte Passphrase">
-                <div class="form-text">Mindestens 16 Zeichen empfohlen. Bei leerem Feld wird beim Speichern eine 32-Zeichen-Passphrase automatisch generiert.</div>
+                <div class="form-text">Mindestens 16 Zeichen empfohlen.</div>
             </div>
             <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Speichern</button>
         </form>

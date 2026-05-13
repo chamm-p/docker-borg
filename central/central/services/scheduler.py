@@ -58,6 +58,12 @@ def _create_scheduled_jobs(db: Session):
             if pending:
                 continue
 
+            # Passphrase ggf. vor dem Job erzeugen
+            if not agent.borg_passphrase:
+                import secrets
+                agent.borg_passphrase = secrets.token_urlsafe(32)
+                logger.info("Auto-generated passphrase for agent %s ahead of scheduled backup", agent.hostname)
+
             enabled_containers = (
                 db.query(Container)
                 .filter(Container.agent_id == agent.id, Container.backup_enabled == True)  # noqa: E712
