@@ -136,6 +136,21 @@ def cmd_daemon(args):
                     try:
                         with last_containers_lock:
                             containers_for_job = list(last_containers)
+                        # Vor jedem Job einen synchronen Heartbeat — sonst läuft
+                        # der erste Worker möglicherweise mit stale Settings
+                        # (z.B. leerer Passphrase, weil Central die gerade erst
+                        # generiert hat). Heartbeat-Response aktualisiert
+                        # settings.borg_passphrase + backup_type etc.
+                        old_pp = settings.borg_passphrase
+                        try:
+                            client.heartbeat(containers_for_job)
+                        except Exception as e:
+                            logger.warning("Pre-job heartbeat sync failed: %s", e)
+                        if old_pp != settings.borg_passphrase:
+                            client.report_job(
+                                job.job_id, "running",
+                                logs=[LogEntry("info", "Backup-Settings (inkl. Passphrase) wurden vor Job-Start aktualisiert")],
+                            )
                         _execute_job(job, containers_for_job, client)
                     finally:
                         cancel_watchdog_stop.set()
