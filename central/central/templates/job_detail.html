@@ -17,12 +17,13 @@
         <form method="post" action="/jobs/{{ job.id }}/cancel" onsubmit="return confirm('Job #{{ job.id }} abbrechen?')">
             <button type="submit" class="btn btn-outline-warning"><i class="bi bi-stop-circle me-1"></i>Abbrechen</button>
         </form>
+        <a href="javascript:history.back()" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Zurück</a>
         {% else %}
         <form method="post" action="/jobs/{{ job.id }}/delete" onsubmit="return confirm('Job #{{ job.id }} löschen?')">
             <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash me-1"></i>Löschen</button>
         </form>
+        <a href="javascript:history.back()" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Schliessen</a>
         {% endif %}
-        <a href="javascript:history.back()" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Zurück</a>
     </div>
 </div>
 
@@ -63,8 +64,10 @@
                     data.logs.forEach((l, i) => { msgs[i].textContent = l.message; });
                     box.scrollTop = box.scrollHeight;
                 }
-                if (data.status === 'success' || data.status === 'failed') {
+                if (data.status === 'success' || data.status === 'failed' || data.status === 'cancelled') {
                     clearInterval(interval);
+                    // Reload once so buttons reflect the new (terminal) state
+                    setTimeout(function() { location.reload(); }, 800);
                 }
             });
         }, 2000);
