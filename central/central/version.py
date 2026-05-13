@@ -1,4 +1,15 @@
-__version__ = "0.5.19"
+__version__ = "0.5.20"
+# v0.5.20 — Stale-State-Cleanup im UI:
+# - Connection-Fehler-Banner blendet sich aus, sobald ein neueres erfolg-
+#   reiches backup/verify/archive_list existiert (Banner hängt nicht mehr
+#   ewig nach altem SCP-Timeout)
+# - Re-Registration und Backup-Target-Änderung löschen last_connection_*
+#   sofort — frischer Zustand bei jeder Neu-Initialisierung
+# - Traffic-Light: nur backup/verify/archive_list zählen (kein SCP_INSTALL_KEY
+#   Failure hält die Ampel gelb), und nur Failures der letzten 24h
+# - last_verify-Widget: nur recent (< 30 Tage), sonst "Noch keine Prüfung"
+# - Jobs-Tab: per-Zeile Löschen-Button + Bulk "Fehlgeschlagene löschen" /
+#   "Alle erledigten löschen" pro Agent
 # v0.5.19 — UX-Cleanup nach echter Nutzung:
 # - Worker-Log-Klassifizierung: borgmatic mit -v 2 loggt subprocess-commands
 #   im Format "<repo>: ENV=*** ENV=*** borg <subcmd> --critical --log-json ..."

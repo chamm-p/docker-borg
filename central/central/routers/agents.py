@@ -130,6 +130,12 @@ def register(req: AgentRegisterRequest, db: Session = Depends(get_db)):
         existing.agent_version = req.agent_version
         existing.status = "online"
         existing.last_heartbeat = datetime.utcnow()
+        # Re-Registration = Frischstart → veraltete Connection-State löschen.
+        # Der Agent ist offensichtlich wieder up und meldet sich, alte Errors
+        # sind nicht mehr current state.
+        existing.last_connection_ok = None
+        existing.last_connection_error = None
+        existing.last_connection_check = None
         db.commit()
         return AgentRegisterResponse(
             agent_id=existing.id,

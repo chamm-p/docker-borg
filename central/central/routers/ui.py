@@ -44,14 +44,58 @@ def _bytesize(n) -> str:
 templates.env.filters["bytesize"] = _bytesize
 
 
-def _agent_traffic_light(agent: Agent, last_job: Job | None) -> str:
+_RELEVANT_FOR_HEALTH = ("backup", "verify", "archive_list")
+
+
+def _agent_traffic_light(agent: Agent, last_relevant_job: Job | None) -> str:
     if agent.status != "online":
         return "red"
-    if last_job and last_job.status == "failed":
-        return "yellow"
-    if not agent.borg_repo and agent.backup_type != "local":
+    # Nur "Backup-relevante" Jobs zählen — alte SCP_INSTALL_KEY-Failures sollen
+    # die Ampel nicht rot/gelb halten.
+    if last_relevant_job and last_relevant_job.status == "failed":
+        # Und nur recent (< 24h) — ein alter Failure von gestern, der durch
+        # erfolgreiches Backup heute überholt wäre, soll auch nicht stören.
+        age = (datetime.utcnow() - (last_relevant_job.completed_at or last_relevant_job.created_at)).total_seconds()
+        if age < 86400:
+            return "yellow"
+    if not agent.borg_repo and agent.backup_type not in ("local", "scp", "webdav"):
         return "yellow"
     return "green"
+
+
+def _last_relevant_job(db: Session, agent_id: int) -> "Job | None":
+    return (
+        db.query(Job)
+        .filter(Job.agent_id == agent_id, Job.job_type.in_(_RELEVANT_FOR_HEALTH))
+        .order_by(Job.created_at.desc())
+        .first()
+    )
+
+
+def _last_successful_relevant_job(db: Session, agent_id: int) -> "Job | None":
+    return (
+        db.query(Job)
+        .filter(Job.agent_id == agent_id,
+                Job.job_type.in_(_RELEVANT_FOR_HEALTH),
+                Job.status == "success")
+        .order_by(Job.created_at.desc())
+        .first()
+    )
+
+
+def _connection_error_active(agent: Agent, last_success: "Job | None") -> bool:
+    """Connection-Fehler nur anzeigen wenn KEIN neueres Erfolg-Backup existiert.
+
+    Sonst bleibt eine alte SCP-Timeout-Meldung ewig stehen, obwohl der
+    Zustand längst wieder ok ist (Backup läuft sauber gegen das Ziel).
+    """
+    if agent.last_connection_ok or not agent.last_connection_error:
+        return False
+    if not agent.last_connection_check:
+        return True
+    if last_success and last_success.completed_at and last_success.completed_at > agent.last_connection_check:
+        return False
+    return True
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -91,7 +135,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "last_backup": last_backup,
             "last_success": last_success,
             "running_job": running_job,
-            "traffic_light": _agent_traffic_light(a, last_job),
+            "traffic_light": _agent_traffic_light(a, _last_relevant_job(db, a.id)),
+            "connection_error_active": _connection_error_active(a, _last_successful_relevant_job(db, a.id)),
         })
     return templates.TemplateResponse(request, "dashboard.html", {"cards": cards})
 
@@ -158,22 +203,32 @@ def agent_detail(
         if any(h.enabled for h in (c._db_hooks or []))
     }
 
+    last_relevant = _last_relevant_job(db, agent_id)
+    last_success_relevant = _last_successful_relevant_job(db, agent_id)
+    # last_verify nur wenn neuer als 30 Tage — sonst nicht "current state"
+    if last_verify and last_verify.completed_at:
+        age_days = (datetime.utcnow() - last_verify.completed_at).days
+        if age_days > 30:
+            last_verify = None
+
     return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": agent,
         "containers": containers,
         "jobs": jobs,
         "schedules": schedules,
         "tab": tab,
-        "traffic_light": _agent_traffic_light(agent, last_job),
+        "traffic_light": _agent_traffic_light(agent, last_relevant),
         "last_verify": last_verify,
         "archives": archives,
         "archives_at": agent.cached_archives_at,
         "projects_with_hooks": projects_with_hooks,
+        "connection_error_active": _connection_error_active(agent, last_success_relevant),
     })
 
 
 def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
                        local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl):
+    prev_repo = agent.borg_repo or ""
     agent.backup_type = backup_type
     if backup_type == "scp":
         agent.scp_host = scp_host
@@ -191,6 +246,11 @@ def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_por
             agent.webdav_password = webdav_password
         agent.webdav_verify_ssl = webdav_verify_ssl
         agent.borg_repo = "/mnt/webdav/borg"
+    # Ziel-Konfig geändert → alter Connection-Fehler ist nicht mehr current state
+    if (agent.borg_repo or "") != prev_repo:
+        agent.last_connection_ok = None
+        agent.last_connection_error = None
+        agent.last_connection_check = None
 
 
 @router.post("/agents/{agent_id}/target")
@@ -771,6 +831,34 @@ def cleanup_jobs(
         db.query(Job).filter(Job.status.in_(targets)).delete(synchronize_session=False)
         db.commit()
     return RedirectResponse("/jobs", status_code=303)
+
+
+@router.post("/agents/{agent_id}/jobs/cleanup")
+def cleanup_agent_jobs(
+    agent_id: int,
+    status: str = Form("done"),
+    db: Session = Depends(get_db),
+):
+    """Pro-Agent Jobs-Cleanup. status: 'done' (erfolg+fehler+cancelled),
+    'failed', 'cancelled', oder 'all' (Live-Jobs ausgenommen).
+    """
+    if status == "done":
+        targets = ("success", "failed", "cancelled")
+    elif status == "failed":
+        targets = ("failed",)
+    elif status == "cancelled":
+        targets = ("cancelled",)
+    elif status == "all":
+        targets = ("success", "failed", "cancelled")
+    else:
+        targets = ()
+    if targets:
+        db.query(Job).filter(
+            Job.agent_id == agent_id,
+            Job.status.in_(targets),
+        ).delete(synchronize_session=False)
+        db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=jobs", status_code=303)
 
 
 @router.get("/jobs", response_class=HTMLResponse)
