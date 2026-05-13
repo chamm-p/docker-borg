@@ -3,7 +3,7 @@ FROM python:3.12-slim
 # Schmaler Agent: orchestriert nur, macht selbst kein Backup mehr.
 # borg/rclone/ssh/fuse leben jetzt im worker-Image.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata openssh-client openssl ca-certificates \
+    && apt-get install -y --no-install-recommends tzdata openssh-client sshpass openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
