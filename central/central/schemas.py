@@ -43,14 +43,15 @@ class ContainerPayload(BaseModel):
     container_name: str
     compose_project: str
     compose_dir: str
-    root_files: list[str]
+    root_files: list[str] = []
     image: str
     status: str
     has_volumes: bool = False
     compose_dir_accessible: bool = False
     backup_mounts: list[dict] = []
-    # legacy, ignored by current code:
-    named_volumes: list[dict] = []
+    top_level_entries: list[dict] = []
+    db_candidates: list[dict] = []
+    named_volumes: list[dict] = []  # legacy
 
 
 class HeartbeatRequest(BaseModel):

@@ -138,6 +138,8 @@ class CentralClient:
                     "has_volumes": c.has_volumes,
                     "compose_dir_accessible": c.compose_dir_accessible,
                     "backup_mounts": c.backup_mounts,
+                    "top_level_entries": getattr(c, "top_level_entries", []),
+                    "db_candidates": getattr(c, "db_candidates", []),
                 }
                 for c in containers
             ],

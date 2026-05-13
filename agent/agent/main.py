@@ -219,6 +219,7 @@ def _execute_job(job, containers, client: CentralClient):
 
             overrides = (job.params or {}).get("compose_dirs", {}) if job.params else {}
             exclude_mounts_by_project = (job.params or {}).get("exclude_mounts", {}) if job.params else {}
+            exclude_entries_by_project = (job.params or {}).get("exclude_entries", {}) if job.params else {}
             db_hooks_by_project = (job.params or {}).get("db_hooks", {}) if job.params else {}
             existing_projects = {c.compose_project for c in targets}
             for project, manual_dir in overrides.items():
@@ -251,13 +252,17 @@ def _execute_job(job, containers, client: CentralClient):
                     continue
                 stream("info", f"→ {c.compose_project}")
                 excludes = exclude_mounts_by_project.get(c.compose_project, [])
+                exclude_entries = exclude_entries_by_project.get(c.compose_project, [])
                 if excludes:
                     stream("info", f"  exkludierte Mounts: {', '.join(excludes)}")
+                if exclude_entries:
+                    stream("info", f"  exkludierte Inhalte: {', '.join(exclude_entries)}")
                 db_hooks = db_hooks_by_project.get(c.compose_project, [])
                 if db_hooks:
                     stream("info", f"  Datenbanken: {', '.join(h['type'] + '/' + h['name'] for h in db_hooks)}")
                 r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m),
-                                       excluded_mounts=excludes, db_hooks=db_hooks)
+                                       excluded_mounts=excludes, db_hooks=db_hooks,
+                                       excluded_entries=exclude_entries)
                 for log in r.logs:
                     client.report_job(job.job_id, "running", logs=[log])
                 if r.success:
@@ -346,6 +351,29 @@ def _execute_job(job, containers, client: CentralClient):
                 job.job_id,
                 "success" if r.success else "failed",
             )
+
+        elif job.job_type == JobType.DB_RESTORE:
+            archive = job.params.get("archive", "")
+            project = job.params.get("project", "")
+            db_hooks = job.params.get("db_hooks", [])
+            if not archive or not project or not db_hooks:
+                client.report_job(job.job_id, "failed",
+                    logs=[LogEntry("error", "archive, project und db_hooks sind nötig")])
+            else:
+                # Container-Info für das Projekt zur Hand haben
+                target_info = next((c for c in containers if c.compose_project == project), None)
+                if not target_info:
+                    from .models import ContainerInfo
+                    target_info = ContainerInfo(
+                        container_id="manual", container_name="(manual)",
+                        compose_project=project, compose_dir="", root_files=[],
+                        image="", status="manual",
+                    )
+                r = worker.run_db_restore(target_info, archive, db_hooks,
+                                          lambda m, lvl="info": stream(lvl, m))
+                for log in r.logs:
+                    client.report_job(job.job_id, "running", logs=[log])
+                client.report_job(job.job_id, "success" if r.success else "failed")
 
     except Exception as e:
         logger.exception("Job %d failed", job.job_id)

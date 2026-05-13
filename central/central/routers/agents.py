@@ -10,36 +10,31 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..models import Agent, Container
+from ..models import Agent, Container, DatabaseHook
 from ..schemas import AgentRegisterRequest, AgentRegisterResponse, BackupConfig, HeartbeatRequest, HeartbeatResponse
 
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 
-# Known DB-Storage-Pfade. Diese Verzeichnisse sind die rohen Daten-Files
-# laufender Datenbanken — Backup davon ist NICHT konsistent. Konsistente
-# Backups laufen über die DB-Hooks (pg_dump, mysqldump, mongodump), die
-# borgmatic von Haus aus unterstützt.
+# Bekannte DB-Storage-Pfade — werden NICHT mehr auto-excluded (alles drin als
+# Fallback). Genutzt nur noch für UI-Hinweise / Warnungen vor manuellem Exclude.
 _DB_STORAGE_PREFIXES = (
     "/var/lib/postgresql",
     "/var/lib/mysql",
     "/var/lib/mariadb",
     "/var/lib/mongodb",
-    "/var/lib/redis",
     "/var/lib/influxdb",
     "/data/db",
-    "/data/redis",
     "/data/mysql",
     "/bitnami/postgresql",
     "/bitnami/mysql",
     "/bitnami/mariadb",
     "/bitnami/mongodb",
-    "/bitnami/redis",
 )
 
 
-def _looks_like_db_storage(dest: str) -> bool:
+def looks_like_db_storage(dest: str) -> bool:
     if not dest:
         return False
     for p in _DB_STORAGE_PREFIXES:
@@ -48,8 +43,41 @@ def _looks_like_db_storage(dest: str) -> bool:
     return False
 
 
-def _auto_exclude_db_mounts(backup_mounts: list[dict]) -> list[str]:
-    return [m.get("dest") for m in (backup_mounts or []) if _looks_like_db_storage(m.get("dest", ""))]
+def _candidate_key(cand: dict) -> str:
+    return f"{cand.get('db_type', '')}:{cand.get('container', '')}:{cand.get('db_name', '')}"
+
+
+def _apply_db_candidates(agent_id: int, container_row, candidates: list[dict], db: Session) -> None:
+    """Nicht-zerstörerisch DB-Hooks aus Candidates anlegen.
+
+    Logik: für jeden Candidate, der weder als aktiver Hook noch in der
+    Dismiss-Liste vorkommt, einen Hook anlegen (enabled=True). User kann
+    den im UI deaktivieren oder per Dismiss-Knopf wegklicken — dann wird
+    er nicht wieder auto-angelegt.
+    """
+    if not candidates:
+        return
+    try:
+        dismissed = set(json.loads(container_row.db_candidates_dismissed or "[]"))
+    except (json.JSONDecodeError, TypeError):
+        dismissed = set()
+    existing_hooks = db.query(DatabaseHook).filter(DatabaseHook.container_id == container_row.id).all()
+    existing_keys = {f"{h.db_type}:{h.hostname}:{h.db_name}" for h in existing_hooks}
+    for cand in candidates:
+        key = _candidate_key(cand)
+        hook_key = f"{cand.get('db_type', '')}:{cand.get('hostname', '')}:{cand.get('db_name', '')}"
+        if key in dismissed or hook_key in existing_keys:
+            continue
+        db.add(DatabaseHook(
+            container_id=container_row.id,
+            db_type=cand.get("db_type", ""),
+            db_name=cand.get("db_name", "") or "",
+            hostname=cand.get("hostname", "") or "",
+            port=int(cand.get("port") or 0),
+            username=cand.get("username", "") or "",
+            password=cand.get("password", "") or "",
+            enabled=True,
+        ))
 
 
 def _backup_config(agent: Agent) -> BackupConfig:
@@ -143,6 +171,8 @@ def heartbeat(
     existing = {c.compose_project: c for c in db.query(Container).filter(Container.agent_id == agent.id).all()}
     seen: set[str] = set()
 
+    new_rows_for_db_init: list[tuple] = []  # (row, candidates)
+
     for c in req.containers:
         seen.add(c.compose_project)
         row = existing.get(c.compose_project)
@@ -157,13 +187,12 @@ def heartbeat(
             row.has_volumes = c.has_volumes
             row.compose_dir_accessible = c.compose_dir_accessible
             row.backup_mounts = json.dumps(c.backup_mounts or [])
-            # DB-Storage-Pfade automatisch exkludieren — solange der User die
-            # Mount-Auswahl nicht selbst angepasst hat
-            if not row.mounts_user_edited:
-                row.excluded_mounts = json.dumps(_auto_exclude_db_mounts(c.backup_mounts or []))
+            row.top_level_entries = json.dumps(c.top_level_entries or [])
+            row.db_candidates = json.dumps(c.db_candidates or [])
+            # Defaults bei Erst-Discovery: alles drin lassen, Power-User
+            # excluded selbst. Keine Auto-Excludes von DB-Pfaden.
         else:
-            auto_excluded = _auto_exclude_db_mounts(c.backup_mounts or [])
-            db.add(Container(
+            new_row = Container(
                 agent_id=agent.id,
                 container_id=c.container_id,
                 container_name=c.container_name,
@@ -175,13 +204,33 @@ def heartbeat(
                 has_volumes=c.has_volumes,
                 compose_dir_accessible=c.compose_dir_accessible,
                 backup_mounts=json.dumps(c.backup_mounts or []),
-                excluded_mounts=json.dumps(auto_excluded),
+                excluded_mounts=json.dumps([]),
+                top_level_entries=json.dumps(c.top_level_entries or []),
+                excluded_entries=json.dumps(
+                    [e["name"] for e in (c.top_level_entries or []) if e.get("default_excluded")]
+                ),
+                db_candidates=json.dumps(c.db_candidates or []),
+                db_candidates_dismissed="[]",
                 backup_enabled=True,
-            ))
+            )
+            db.add(new_row)
+            new_rows_for_db_init.append((new_row, c.db_candidates or []))
 
     for project, row in existing.items():
         if project not in seen:
             db.delete(row)
+
+    db.flush()
+
+    # Bestehende Container: DB-Candidates jetzt anwenden (nach update der DB-Spalte)
+    for c in req.containers:
+        row = existing.get(c.compose_project)
+        if row and c.db_candidates:
+            _apply_db_candidates(agent.id, row, c.db_candidates, db)
+    # Neue Container: ID ist nach flush() vorhanden
+    for new_row, cands in new_rows_for_db_init:
+        if cands:
+            _apply_db_candidates(agent.id, new_row, cands, db)
 
     db.commit()
 

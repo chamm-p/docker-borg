@@ -9,6 +9,7 @@ class JobType(str, Enum):
     BACKUP = "backup"
     PRUNE = "prune"
     RESTORE = "restore"
+    DB_RESTORE = "db_restore"
     LIST = "list"
     VERIFY = "verify"
     SCP_TEST = "scp_test"
@@ -34,9 +35,9 @@ class ContainerInfo:
     status: str
     has_volumes: bool = False
     compose_dir_accessible: bool = False
-    # Mounts der Container, die in den Backup einbezogen werden (via Docker-API extrahiert)
-    # Liste von {type: "volume"|"bind", name: str, dest: str, source: str, container: str}
     backup_mounts: list[dict] = field(default_factory=list)
+    top_level_entries: list[dict] = field(default_factory=list)
+    db_candidates: list[dict] = field(default_factory=list)
 
 
 @dataclass

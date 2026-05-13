@@ -67,6 +67,10 @@ class Container(Base):
     named_volumes: Mapped[str] = mapped_column(Text, default="[]")
     backup_mounts: Mapped[str] = mapped_column(Text, default="[]")
     excluded_mounts: Mapped[str] = mapped_column(Text, default="[]")
+    top_level_entries: Mapped[str] = mapped_column(Text, default="[]")
+    excluded_entries: Mapped[str] = mapped_column(Text, default="[]")
+    db_candidates: Mapped[str] = mapped_column(Text, default="[]")
+    db_candidates_dismissed: Mapped[str] = mapped_column(Text, default="[]")
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

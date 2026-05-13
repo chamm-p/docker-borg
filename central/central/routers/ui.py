@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,23 @@ templates.env.filters["relative"] = relative
 templates.env.filters["human_schedule"] = human_for
 
 
+def _bytesize(n) -> str:
+    try:
+        n = float(n or 0)
+    except (TypeError, ValueError):
+        return "—"
+    if n < 1024:
+        return f"{int(n)} B"
+    for unit in ("KB", "MB", "GB", "TB"):
+        n /= 1024
+        if n < 1024:
+            return f"{n:.1f} {unit}" if n < 100 else f"{n:.0f} {unit}"
+    return f"{n:.1f} PB"
+
+
+templates.env.filters["bytesize"] = _bytesize
+
+
 def _agent_traffic_light(agent: Agent, last_job: Job | None) -> str:
     if agent.status != "online":
         return "red"
@@ -43,7 +60,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     cards: list[dict[str, Any]] = []
     for a in agents:
         containers = db.query(Container).filter(Container.agent_id == a.id).all()
-        backupable = [c for c in containers if c.compose_dir and c.root_files and c.root_files != "[]"]
+        backupable = [c for c in containers if c.compose_dir]
         enabled = [c for c in backupable if c.backup_enabled]
         last_job = db.query(Job).filter(Job.agent_id == a.id).order_by(Job.created_at.desc()).first()
         last_backup = (
@@ -93,7 +110,14 @@ def agent_detail(
     containers = db.query(Container).filter(Container.agent_id == agent_id).order_by(Container.compose_project).all()
     for c in containers:
         c._files = json.loads(c.root_files) if c.root_files else []
-        c._sicherbar = bool(c.compose_dir and c._files)
+        try:
+            c._entries = json.loads(c.top_level_entries) if c.top_level_entries else []
+        except (json.JSONDecodeError, TypeError):
+            c._entries = []
+        try:
+            c._excluded_entries = set(json.loads(c.excluded_entries)) if c.excluded_entries else set()
+        except (json.JSONDecodeError, TypeError):
+            c._excluded_entries = set()
         try:
             c._backup_mounts = json.loads(c.backup_mounts) if c.backup_mounts else []
         except (json.JSONDecodeError, TypeError):
@@ -102,6 +126,15 @@ def agent_detail(
             c._excluded_mounts = set(json.loads(c.excluded_mounts)) if c.excluded_mounts else set()
         except (json.JSONDecodeError, TypeError):
             c._excluded_mounts = set()
+        try:
+            c._db_candidates = json.loads(c.db_candidates) if c.db_candidates else []
+        except (json.JSONDecodeError, TypeError):
+            c._db_candidates = []
+        try:
+            c._db_dismissed = set(json.loads(c.db_candidates_dismissed) if c.db_candidates_dismissed else [])
+        except (json.JSONDecodeError, TypeError):
+            c._db_dismissed = set()
+        c._sicherbar = bool(c.compose_dir and (c._entries or c._backup_mounts))
         c._db_hooks = db.query(DatabaseHook).filter(DatabaseHook.container_id == c.id).all()
 
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
@@ -120,6 +153,11 @@ def agent_detail(
         archives = []
     archives.sort(key=lambda a: a.get("start", ""), reverse=True)
 
+    projects_with_hooks = {
+        c.compose_project for c in containers
+        if any(h.enabled for h in (c._db_hooks or []))
+    }
+
     return templates.TemplateResponse(request, "agent_detail.html", {
         "agent": agent,
         "containers": containers,
@@ -130,6 +168,7 @@ def agent_detail(
         "last_verify": last_verify,
         "archives": archives,
         "archives_at": agent.cached_archives_at,
+        "projects_with_hooks": projects_with_hooks,
     })
 
 
@@ -335,15 +374,43 @@ async def update_container_mounts(
     if not row:
         return HTMLResponse("Container nicht gefunden", status_code=404)
     form = await request.form()
-    # form contains "include" entries with the dest path for each enabled mount
-    included = set(form.getlist("include"))
+    # "include" enthält dest-Paths externer Mounts; "include_entry" Namen der
+    # Top-Level-Einträge des Compose-Dirs. Was NICHT angehakt ist → excluded.
+    included_mounts = set(form.getlist("include"))
+    included_entries = set(form.getlist("include_entry"))
     try:
         all_mounts = json.loads(row.backup_mounts) if row.backup_mounts else []
     except (json.JSONDecodeError, TypeError):
         all_mounts = []
-    excluded = [m.get("dest") for m in all_mounts if m.get("dest") and m["dest"] not in included]
+    try:
+        all_entries = json.loads(row.top_level_entries) if row.top_level_entries else []
+    except (json.JSONDecodeError, TypeError):
+        all_entries = []
+    excluded = [m.get("dest") for m in all_mounts if m.get("dest") and m["dest"] not in included_mounts]
+    excluded_e = [e.get("name") for e in all_entries if e.get("name") and e["name"] not in included_entries]
     row.excluded_mounts = json.dumps(excluded)
+    row.excluded_entries = json.dumps(excluded_e)
     row.mounts_user_edited = True
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
+
+
+@router.post("/agents/{agent_id}/containers/{container_id}/dismiss-db")
+def dismiss_db_candidate(
+    agent_id: int,
+    container_id: int,
+    cand_key: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    row = db.query(Container).filter(Container.id == container_id, Container.agent_id == agent_id).first()
+    if not row:
+        return HTMLResponse("Container nicht gefunden", status_code=404)
+    try:
+        dismissed = set(json.loads(row.db_candidates_dismissed or "[]"))
+    except (json.JSONDecodeError, TypeError):
+        dismissed = set()
+    dismissed.add(cand_key)
+    row.db_candidates_dismissed = json.dumps(sorted(dismissed))
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
 
@@ -474,15 +541,22 @@ def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
     projects = sorted({c.compose_project for c in enabled if c.compose_project})
     overrides = {c.compose_project: c.manual_compose_dir for c in enabled if c.manual_compose_dir}
     excludes: dict[str, list[str]] = {}
+    exclude_entries: dict[str, list[str]] = {}
     for c in enabled:
-        if not c.excluded_mounts:
-            continue
-        try:
-            ex = json.loads(c.excluded_mounts)
-        except (json.JSONDecodeError, TypeError):
-            ex = []
-        if ex:
-            excludes[c.compose_project] = ex
+        if c.excluded_mounts:
+            try:
+                ex = json.loads(c.excluded_mounts)
+            except (json.JSONDecodeError, TypeError):
+                ex = []
+            if ex:
+                excludes[c.compose_project] = ex
+        if c.excluded_entries:
+            try:
+                ee = json.loads(c.excluded_entries)
+            except (json.JSONDecodeError, TypeError):
+                ee = []
+            if ee:
+                exclude_entries[c.compose_project] = ee
     # DB-Hooks pro Container einsammeln
     db_hooks_by_project: dict[str, list[dict]] = {}
     for c in enabled:
@@ -505,6 +579,8 @@ def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
         params["compose_dirs"] = overrides
     if excludes:
         params["exclude_mounts"] = excludes
+    if exclude_entries:
+        params["exclude_entries"] = exclude_entries
     if db_hooks_by_project:
         params["db_hooks"] = db_hooks_by_project
     return projects, params
@@ -534,7 +610,7 @@ def trigger_backup(agent_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/agents/{agent_id}/archives/refresh")
-def refresh_archives(agent_id: int, db: Session = Depends(get_db)):
+def refresh_archives(agent_id: int, request: Request, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
@@ -543,6 +619,9 @@ def refresh_archives(agent_id: int, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     db.refresh(job)
+    accepts = request.headers.get("accept", "")
+    if "application/json" in accepts:
+        return JSONResponse({"job_id": job.id})
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
@@ -590,6 +669,46 @@ def trigger_restore(
             "sub_path": effective_sub_path,
             "host_target": host_target.strip(),
         }),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@router.post("/agents/{agent_id}/db-restore")
+def trigger_db_restore(
+    agent_id: int,
+    archive: str = Form(...),
+    project: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    ensure_agent_passphrase(agent, db)
+    container_row = (
+        db.query(Container)
+        .filter(Container.agent_id == agent_id, Container.compose_project == project)
+        .first()
+    )
+    if not container_row:
+        return HTMLResponse(f"Projekt {project} nicht gefunden", status_code=404)
+    hooks = db.query(DatabaseHook).filter(
+        DatabaseHook.container_id == container_row.id,
+        DatabaseHook.enabled == True,  # noqa: E712
+    ).all()
+    if not hooks:
+        return HTMLResponse(f"Keine aktiven DB-Hooks für Projekt {project}", status_code=400)
+    hook_payload = [
+        {"type": h.db_type, "name": h.db_name, "hostname": h.hostname,
+         "port": h.port, "username": h.username, "password": h.password}
+        for h in hooks
+    ]
+    job = Job(
+        agent_id=agent_id,
+        job_type="db_restore",
+        params=json.dumps({"archive": archive, "project": project, "db_hooks": hook_payload}),
     )
     db.add(job)
     db.commit()

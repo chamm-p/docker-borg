@@ -114,6 +114,7 @@ def _build_borgmatic_config(
     archive_prefix: str,
     excluded_mounts: set | None = None,
     db_hooks: list[dict] | None = None,
+    excluded_entries: list[str] | None = None,
 ) -> dict:
     """Produces a borgmatic config dict for one compose project."""
     excluded = set(excluded_mounts or [])
@@ -126,16 +127,26 @@ def _build_borgmatic_config(
             sources.append(dest)
     sources = sorted(set(sources))
 
+    exclude_patterns = [
+        "**/.git", "**/node_modules", "**/__pycache__", "*.pyc",
+        "**/.venv", "**/venv", "**/.cache", "**/.DS_Store",
+    ]
+    # Vom User abgewählte Top-Level-Einträge unter dem Compose-Dir
+    for name in (excluded_entries or []):
+        if not name or "/" in name or name.startswith("."):
+            # Sicherheitsnetz: keine Pfad-Traversal-Patterns, keine versteckten Dirs hier
+            if name and name not in (".git", ".github", ".idea", ".vscode", "__pycache__", ".pytest_cache"):
+                continue
+        exclude_patterns.append(f"/mnt/compose/{name}")
+        exclude_patterns.append(f"/mnt/compose/{name}/**")
+
     config = {
         "source_directories": sources or ["/mnt/compose"],
         "repositories": [{"path": repo_path}],
         "archive_name_format": f"{archive_prefix}-{{now:%Y%m%dT%H%M%S}}",
         "compression": "lz4",
         "one_file_system": False,
-        "exclude_patterns": [
-            "**/.git", "**/node_modules", "**/__pycache__", "*.pyc",
-            "**/.venv", "**/venv", "**/.cache", "**/.DS_Store",
-        ],
+        "exclude_patterns": exclude_patterns,
     }
 
     # Datenbank-Hooks: borgmatic ruft pg_dump/mysqldump/mongodump und schiebt
@@ -404,7 +415,8 @@ def _spawn_worker(
 
 def run_backup(container: ContainerInfo, on_log,
                excluded_mounts: list[str] | None = None,
-               db_hooks: list[dict] | None = None) -> WorkerResult:
+               db_hooks: list[dict] | None = None,
+               excluded_entries: list[str] | None = None) -> WorkerResult:
     """Run a backup for one compose project via an ephemeral borgmatic worker."""
     start = time.time()
     docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
@@ -419,7 +431,8 @@ def run_backup(container: ContainerInfo, on_log,
         repo_path = _resolve_repo_path()
         config = _build_borgmatic_config(container, repo_path, archive_prefix,
                                           excluded_mounts=set(excluded_mounts or []),
-                                          db_hooks=db_hooks)
+                                          db_hooks=db_hooks,
+                                          excluded_entries=excluded_entries)
 
         extra_volumes: dict = {}
         if container.compose_dir:
@@ -635,5 +648,48 @@ def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "")
         location = host_target or "/data/restore (im Agent-Container — via `docker cp dborg-agent:/data/restore <ziel>` abrufbar)"
         return WorkerResult(True, JobResult(archive_name=archive, duration_seconds=duration),
                             [LogEntry("info", f"Wiederherstellung abgeschlossen in {duration}s — Dateien unter: {location}")])
+    finally:
+        docker_client.close()
+
+
+def run_db_restore(container: ContainerInfo, archive: str, db_hooks: list[dict], on_log) -> WorkerResult:
+    """Spielt DB-Dumps eines Archivs zurück in die laufenden DB-Container.
+
+    Der Worker wird ans Compose-Netz des Projekts gehängt, damit er den
+    DB-Container per Hostname (Container-Name) erreichen kann. borgmatic
+    extrahiert die Dumps aus dem Archiv und feuert pg_restore/mysql/mongorestore
+    automatisch.
+    """
+    start = time.time()
+    docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+    try:
+        targets = _resolve_all_project_containers(docker_client, container.compose_project)
+        if not targets:
+            return WorkerResult(False, JobResult(),
+                                [LogEntry("error", f"Kein Container für '{container.compose_project}' gefunden")])
+
+        archive_prefix = f"{settings.agent_name}-{container.compose_project}"
+        repo_path = _resolve_repo_path()
+        config = _build_borgmatic_config(container, repo_path, archive_prefix,
+                                          db_hooks=db_hooks)
+        # Restore braucht keine source_directories — leeren, sonst sieht borgmatic
+        # einen Backup-Lauf
+        config["source_directories"] = ["/tmp"]
+
+        on_log(f"DB-Replay aus Archiv {archive} → {len(db_hooks)} DB(s)", "info")
+        exit_code, _ = _spawn_worker(
+            docker_client,
+            config=config,
+            mode="restore",
+            extra_args=["--archive", archive],
+            volumes_from_target=targets,  # für Netz-Anschluss ans Compose-Netz
+            on_log=on_log,
+        )
+        duration = round(time.time() - start, 2)
+        if exit_code != 0:
+            return WorkerResult(False, JobResult(duration_seconds=duration),
+                                [LogEntry("error", f"DB-Replay fehlgeschlagen (exit {exit_code})")])
+        return WorkerResult(True, JobResult(archive_name=archive, duration_seconds=duration),
+                            [LogEntry("info", f"DB-Replay abgeschlossen in {duration}s")])
     finally:
         docker_client.close()
