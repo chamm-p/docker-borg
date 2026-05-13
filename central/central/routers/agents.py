@@ -17,6 +17,41 @@ from ..schemas import AgentRegisterRequest, AgentRegisterResponse, BackupConfig,
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
 
+# Known DB-Storage-Pfade. Diese Verzeichnisse sind die rohen Daten-Files
+# laufender Datenbanken — Backup davon ist NICHT konsistent. Konsistente
+# Backups laufen über die DB-Hooks (pg_dump, mysqldump, mongodump), die
+# borgmatic von Haus aus unterstützt.
+_DB_STORAGE_PREFIXES = (
+    "/var/lib/postgresql",
+    "/var/lib/mysql",
+    "/var/lib/mariadb",
+    "/var/lib/mongodb",
+    "/var/lib/redis",
+    "/var/lib/influxdb",
+    "/data/db",
+    "/data/redis",
+    "/data/mysql",
+    "/bitnami/postgresql",
+    "/bitnami/mysql",
+    "/bitnami/mariadb",
+    "/bitnami/mongodb",
+    "/bitnami/redis",
+)
+
+
+def _looks_like_db_storage(dest: str) -> bool:
+    if not dest:
+        return False
+    for p in _DB_STORAGE_PREFIXES:
+        if dest == p or dest.startswith(p + "/"):
+            return True
+    return False
+
+
+def _auto_exclude_db_mounts(backup_mounts: list[dict]) -> list[str]:
+    return [m.get("dest") for m in (backup_mounts or []) if _looks_like_db_storage(m.get("dest", ""))]
+
+
 def _backup_config(agent: Agent) -> BackupConfig:
     return BackupConfig(
         backup_type=agent.backup_type or "scp",
@@ -122,7 +157,12 @@ def heartbeat(
             row.has_volumes = c.has_volumes
             row.compose_dir_accessible = c.compose_dir_accessible
             row.backup_mounts = json.dumps(c.backup_mounts or [])
+            # DB-Storage-Pfade automatisch exkludieren — solange der User die
+            # Mount-Auswahl nicht selbst angepasst hat
+            if not row.mounts_user_edited:
+                row.excluded_mounts = json.dumps(_auto_exclude_db_mounts(c.backup_mounts or []))
         else:
+            auto_excluded = _auto_exclude_db_mounts(c.backup_mounts or [])
             db.add(Container(
                 agent_id=agent.id,
                 container_id=c.container_id,
@@ -135,6 +175,7 @@ def heartbeat(
                 has_volumes=c.has_volumes,
                 compose_dir_accessible=c.compose_dir_accessible,
                 backup_mounts=json.dumps(c.backup_mounts or []),
+                excluded_mounts=json.dumps(auto_excluded),
                 backup_enabled=True,
             ))
 

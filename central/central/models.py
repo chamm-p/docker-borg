@@ -63,6 +63,7 @@ class Container(Base):
     status: Mapped[str] = mapped_column(String(20), default="running")
     has_volumes: Mapped[bool] = mapped_column(Boolean, default=False)
     compose_dir_accessible: Mapped[bool] = mapped_column(Boolean, default=False)
+    mounts_user_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     named_volumes: Mapped[str] = mapped_column(Text, default="[]")
     backup_mounts: Mapped[str] = mapped_column(Text, default="[]")
     excluded_mounts: Mapped[str] = mapped_column(Text, default="[]")

@@ -342,6 +342,7 @@ async def update_container_mounts(
         all_mounts = []
     excluded = [m.get("dest") for m in all_mounts if m.get("dest") and m["dest"] not in included]
     row.excluded_mounts = json.dumps(excluded)
+    row.mounts_user_edited = True
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
 

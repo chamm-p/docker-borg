@@ -450,15 +450,19 @@ function revealPassphrase() {
                             <td colspan="5" class="bg-body-tertiary">
                                 <form method="post" action="/agents/{{ agent.id }}/containers/{{ c.id }}/mounts" class="m-0">
                                     <p class="small text-muted mb-2"><strong>Mounts dieses Projekts</strong> — Häkchen entfernen um z.B. grosse Media-Pfade aus dem Backup zu nehmen. Speichern wirkt auf alle künftigen Backup-Läufe.</p>
+                                    {% set _db_prefixes = ('/var/lib/postgresql', '/var/lib/mysql', '/var/lib/mariadb', '/var/lib/mongodb', '/var/lib/redis', '/var/lib/influxdb', '/data/db', '/data/redis', '/data/mysql', '/bitnami/postgresql', '/bitnami/mysql', '/bitnami/mariadb', '/bitnami/mongodb', '/bitnami/redis') %}
                                     <div class="row g-2">
                                         {% for m in c._backup_mounts %}
+                                        {% set _is_db = false %}
+                                        {% for p in _db_prefixes %}{% if m.dest == p or m.dest.startswith(p + '/') %}{% set _is_db = true %}{% endif %}{% endfor %}
                                         <div class="col-md-12">
                                             <div class="form-check">
                                                 <input class="form-check-input" type="checkbox" name="include" value="{{ m.dest }}" id="mnt-{{ c.id }}-{{ loop.index }}" {% if m.dest not in c._excluded_mounts %}checked{% endif %}>
                                                 <label class="form-check-label small" for="mnt-{{ c.id }}-{{ loop.index }}">
                                                     <code>{{ m.dest }}</code>
                                                     <span class="text-muted">— {{ m.type }}{% if m.name %} <code class="text-muted">{{ m.name }}</code>{% endif %} in {{ m.container }}</span>
-                                                    {% if m.dest in c._excluded_mounts %}<span class="badge text-bg-warning ms-2">exkludiert</span>{% endif %}
+                                                    {% if _is_db %}<span class="badge text-bg-info ms-2" title="Rohes DB-Datenverzeichnis — inkonsistent zu sichern. Konsistenter Backup via DB-Dump-Hook (kommt in v0.5.x)">DB-Storage (auto-exkl.)</span>{% endif %}
+                                                    {% if m.dest in c._excluded_mounts and not _is_db %}<span class="badge text-bg-warning ms-2">exkludiert</span>{% endif %}
                                                 </label>
                                             </div>
                                         </div>
