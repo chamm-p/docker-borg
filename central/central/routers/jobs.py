@@ -70,6 +70,12 @@ def update_job_status(
             if isinstance(archives, list):
                 agent.cached_archives = json.dumps(archives)
                 agent.cached_archives_at = datetime.utcnow()
+        if update.status == "success" and job.job_type in ("backup", "archive_list", "verify"):
+            # Successful target-touching job → stale Verbindungs-Fehler ist obsolet
+            if agent.last_connection_ok is False:
+                agent.last_connection_ok = True
+                agent.last_connection_error = None
+                agent.last_connection_check = datetime.utcnow()
 
     if update.result:
         job.result = json.dumps(update.result)

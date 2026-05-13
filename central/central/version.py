@@ -1,9 +1,15 @@
-__version__ = "0.5.18"
-# v0.5.18 — Mailcow + Self-Backup-Fixes
-# - mariadb-/mysql-Hook bekommt Default tls=false (restore_tls=false),
-#   weil mariadb-client 11.x TLS by default verlangt und mailcow's mariadb 10.x
-#   gar kein TLS supportet. Lokal mit mariadb:10.5 verifiziert: Backup + Restore
-#   gehen jetzt, 100 Rows kommen sauber zurück.
-# - Discovery skipped das eigene Compose-Projekt des Agents (Container-Label
-#   com.docker.compose.project). Self-Backup von 1.95 kB Müll fällt weg.
+__version__ = "0.5.19"
+# v0.5.19 — UX-Cleanup nach echter Nutzung:
+# - Worker-Log-Klassifizierung: borgmatic mit -v 2 loggt subprocess-commands
+#   im Format "<repo>: ENV=*** ENV=*** borg <subcmd> --critical --log-json ..."
+#   Die naive "error in line"-Heuristik hatte das fälschlich als ERROR gestempelt
+#   (--critical, --log-json triggern). Jetzt: command-dump-Pattern wird vorab
+#   als info erkannt, sonst Wortgrenzen-Match für error/critical/fatal/warning.
+# - last_connection_error wird nach erfolgreichem backup/verify/archive_list
+#   automatisch gecleart. Veraltete "Verbindung fehlgeschlagen"-Banner gehen weg
+#   sobald ein Backup gegen das Ziel sauber durchgelaufen ist.
+# - "Mount fehlt"-Badge umformuliert. Steht eigentlich für "Compose-Dir nicht im
+#   Agent gemountet" — Backup läuft trotzdem via --volumes-from. Neue Badges:
+#   "Compose-Dir gemountet", "nur Volumes", "nichts zu sichern". Tooltip
+#   erklärt's. Banner im Container-Tab analog entschärft (info statt warning).
 APP_VERSION = __version__

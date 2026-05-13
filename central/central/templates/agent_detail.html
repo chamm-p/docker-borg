@@ -367,11 +367,13 @@ function revealPassphrase() {
         {% set unreachable = containers|selectattr('compose_dir')|rejectattr('compose_dir_accessible')|list %}
         {% set no_compose = containers|rejectattr('compose_dir')|rejectattr('manual_compose_dir')|list %}
         {% if unreachable %}
-        <div class="alert alert-warning rounded-0 mb-0 border-0 border-bottom">
-            <i class="bi bi-exclamation-triangle-fill me-1"></i>
-            <strong>{{ unreachable|length }}</strong> Compose-Verzeichnis{% if unreachable|length > 1 %}se sind{% else %} ist{% endif %} im Agent-Container nicht zugreifbar.
-            Setze in der Agent-Compose <code>DBORG_HOST_BASE_DIR</code> auf den Host-Pfad
-            und mount entsprechend (z.B. <code>/home/user/docker:/host/docker:ro</code>).
+        <div class="alert alert-info rounded-0 mb-0 border-0 border-bottom small">
+            <i class="bi bi-info-circle-fill me-1"></i>
+            Bei <strong>{{ unreachable|length }}</strong> Projekt{% if unreachable|length > 1 %}en{% endif %} ist das Compose-Verzeichnis im Agent nicht gemountet —
+            das Backup läuft über <code>--volumes-from</code> trotzdem durch, nur das Compose-Verzeichnis selbst
+            (<code>docker-compose.yml</code>, <code>.env</code>, lokale <code>./data</code> bind-mounts) liegt nicht im Archiv.
+            Wenn das gewünscht ist: in der Agent-Compose <code>DBORG_HOST_BASE_DIR</code> auf den Host-Pfad setzen
+            und entsprechend mounten (z.B. <code>/sync/Docker:/host/docker:ro</code>).
         </div>
         {% endif %}
         {% if no_compose %}
@@ -437,14 +439,12 @@ function revealPassphrase() {
                             <td>
                                 {% if not effective_dir %}
                                 <span class="badge text-bg-secondary"><i class="bi bi-dash-circle me-1"></i>Pfad fehlt</span>
-                                {% elif c._files %}
-                                <span class="badge text-bg-success" title="{{ c._files|join(', ') }}"><i class="bi bi-check-circle me-1"></i>{{ c._files|length }} Datei{% if c._files|length != 1 %}en{% endif %}</span>
-                                {% elif c.manual_compose_dir %}
-                                <span class="badge text-bg-info" title="Manuell gesetzt – wird beim Backup verwendet"><i class="bi bi-cursor me-1"></i>manuell</span>
                                 {% elif c.compose_dir_accessible %}
-                                <span class="badge text-bg-warning" title="Verzeichnis lesbar, aber keine docker-compose.yml / .env / Dockerfile gefunden (bis Tiefe 2)"><i class="bi bi-question-circle me-1"></i>keine Backup-Dateien</span>
+                                <span class="badge text-bg-success" title="Compose-Verzeichnis ist im Agent gemountet, Inhalt wird auf Wunsch zusätzlich gesichert"><i class="bi bi-check-circle me-1"></i>Compose-Dir gemountet</span>
+                                {% elif c._backup_mounts %}
+                                <span class="badge text-bg-info" title="Agent hat das Compose-Verzeichnis nicht gemountet. Backup läuft trotzdem über Volumes (--volumes-from), nur das Compose-Verzeichnis selbst (docker-compose.yml, .env, ./data) ist nicht im Archiv. Wenn das gewünscht ist: DBORG_HOST_BASE_DIR setzen und Host-Pfad ins agent /host/docker mounten."><i class="bi bi-info-circle me-1"></i>nur Volumes</span>
                                 {% else %}
-                                <span class="badge text-bg-danger" title="Agent-Container hat keinen Zugriff auf das Verzeichnis"><i class="bi bi-x-circle me-1"></i>Mount fehlt</span>
+                                <span class="badge text-bg-warning" title="Weder Compose-Verzeichnis im Agent gemountet, noch externe Volumes — es würde nichts gesichert"><i class="bi bi-exclamation-triangle me-1"></i>nichts zu sichern</span>
                                 {% endif %}
                             </td>
                         </tr>

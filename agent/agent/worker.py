@@ -75,6 +75,26 @@ class WorkerResult:
     logs: list[LogEntry] = field(default_factory=list)
 
 
+# Worker-Output-Klassifizierung: borgmatic mit -v 2 loggt subprocess-Invocations
+# in Form "<repo>: ENV=*** ENV=*** borg <subcmd> --critical --log-json ..." —
+# das ist kein Fehler, nur Debug. Naive "error in line" Heuristik triggert da
+# fälschlich (--critical, --log-json enthalten "critical" und "json").
+import re as _re
+_ERROR_WORD = _re.compile(r"\b(error|critical|fatal)\b", _re.IGNORECASE)
+_WARN_WORD = _re.compile(r"\b(warning|warn)\b", _re.IGNORECASE)
+_COMMAND_DUMP = _re.compile(r":\s+(\w+=\S+\s+)+borg\s+\w+", _re.IGNORECASE)
+
+
+def _classify_log_line(line: str) -> str:
+    if _COMMAND_DUMP.search(line):
+        return "info"
+    if _ERROR_WORD.search(line):
+        return "error"
+    if _WARN_WORD.search(line):
+        return "warning"
+    return "info"
+
+
 _active_container_id: str | None = None
 _active_lock = threading.Lock()
 
@@ -399,13 +419,7 @@ def _spawn_worker(
                 line = line.rstrip()
                 if not line:
                     continue
-                level = "info"
-                low = line.lower()
-                if "error" in low or "critical" in low or "fatal" in low:
-                    level = "error"
-                elif "warn" in low:
-                    level = "warning"
-                on_log(line, level)
+                on_log(line, _classify_log_line(line))
 
         worker.reload()
         exit_code = worker.attrs.get("State", {}).get("ExitCode", -1)
