@@ -280,8 +280,8 @@ def _execute_job(job, containers, client: CentralClient):
 
         elif job.job_type == JobType.PRUNE:
             client.report_job(
-                job.job_id, "failed",
-                logs=[LogEntry("warning", "PRUNE wird in v0.5.0 vom borgmatic-Config gesteuert (kommt in 0.5.x)")],
+                job.job_id, "success",
+                logs=[LogEntry("info", "Prune durch borgmatic beim Backup bereits erledigt")],
             )
 
         elif job.job_type == JobType.LIST:
