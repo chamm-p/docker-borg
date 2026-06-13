@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Agent, Container, DatabaseHook, Job, JobLog, Schedule
 from ..services.admin import get_admin_password, set_admin_password
+from ..services.backup_params import build_backup_params
 from ..services.connection_check import check_connection, record_result
 from ..services.format import localtime, localtime_short, relative
 from ..services.schedule_helpers import cron_for, human_for
@@ -181,6 +182,32 @@ def agent_detail(
             c._db_dismissed = set()
         c._sicherbar = bool(c.compose_dir and (c._entries or c._backup_mounts))
         c._db_hooks = db.query(DatabaseHook).filter(DatabaseHook.container_id == c.id).all()
+        # Größenschätzung (unkomprimiert): enthaltene Compose-Inhalte + enthaltene
+        # externe Mounts, minus Excludes. DB-Raw-Dirs die per aktivem Hook
+        # auto-exkludiert werden, hier auch abziehen (dump-only).
+        _auto_excl_entries: set = set()
+        _auto_excl_mounts: set = set()
+        if c._db_hooks:
+            _active = {f"{h.db_type}:{h.hostname}:{h.db_name}" for h in c._db_hooks if h.enabled}
+            for cand in c._db_candidates:
+                key = f"{cand.get('db_type','')}:{cand.get('hostname','')}:{cand.get('db_name','')}"
+                raw = cand.get("raw_exclude")
+                if key in _active and raw:
+                    if raw.get("kind") == "entry":
+                        _auto_excl_entries.add(raw.get("value"))
+                    elif raw.get("kind") == "mount":
+                        _auto_excl_mounts.add(raw.get("value"))
+        est = 0
+        for e in c._entries:
+            if e.get("name") in c._excluded_entries or e.get("name") in _auto_excl_entries:
+                continue
+            est += int(e.get("size_bytes") or 0)
+        for m in c._backup_mounts:
+            if m.get("dest") in c._excluded_mounts or m.get("dest") in _auto_excl_mounts:
+                continue
+            est += int(m.get("size_bytes") or 0)
+        c._est_bytes = est
+        c._has_db_dump = bool(c._db_hooks)
 
     jobs = db.query(Job).filter(Job.agent_id == agent_id).order_by(Job.created_at.desc()).limit(50).all()
     schedules = db.query(Schedule).filter(Schedule.agent_id == agent_id).all()
@@ -203,6 +230,9 @@ def agent_detail(
         if any(h.enabled for h in (c._db_hooks or []))
     }
 
+    est_total = sum(c._est_bytes for c in containers if c.backup_enabled)
+    est_has_db = any(c._has_db_dump for c in containers if c.backup_enabled)
+
     last_relevant = _last_relevant_job(db, agent_id)
     last_success_relevant = _last_successful_relevant_job(db, agent_id)
     # last_verify nur wenn neuer als 30 Tage — sonst nicht "current state"
@@ -223,6 +253,8 @@ def agent_detail(
         "archives_at": agent.cached_archives_at,
         "projects_with_hooks": projects_with_hooks,
         "connection_error_active": _connection_error_active(agent, last_success_relevant),
+        "est_total": est_total,
+        "est_has_db": est_has_db,
     })
 
 
@@ -275,6 +307,39 @@ def update_target(
                        local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=target", status_code=303)
+
+
+@router.post("/agents/{agent_id}/retention")
+def update_retention(
+    agent_id: int,
+    retention_mode: str = Form("simple"),
+    keep_last: int = Form(7),
+    keep_daily: int = Form(7),
+    keep_weekly: int = Form(4),
+    keep_monthly: int = Form(6),
+    prune_enabled: bool = Form(False),
+    worker_mem_mb: int = Form(1024),
+    worker_cpus: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return HTMLResponse("Agent nicht gefunden", status_code=404)
+    agent.retention_mode = retention_mode if retention_mode in ("simple", "advanced") else "simple"
+    agent.keep_last = max(0, keep_last)
+    agent.keep_daily = max(0, keep_daily)
+    agent.keep_weekly = max(0, keep_weekly)
+    agent.keep_monthly = max(0, keep_monthly)
+    agent.prune_enabled = prune_enabled
+    agent.worker_mem_mb = max(256, worker_mem_mb)
+    # worker_cpus: leer oder positive Zahl als String
+    wc = (worker_cpus or "").strip()
+    try:
+        agent.worker_cpus = wc if (wc and float(wc) > 0) else ""
+    except ValueError:
+        agent.worker_cpus = ""
+    db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=schedule", status_code=303)
 
 
 @router.post("/agents/{agent_id}/scp/test")
@@ -593,57 +658,10 @@ def ensure_agent_passphrase(agent: Agent, db: Session) -> bool:
 
 
 def _backup_params_for(agent_id: int, db: Session) -> tuple[list[str], dict]:
-    enabled = (
-        db.query(Container)
-        .filter(Container.agent_id == agent_id, Container.backup_enabled == True)  # noqa: E712
-        .all()
-    )
-    projects = sorted({c.compose_project for c in enabled if c.compose_project})
-    overrides = {c.compose_project: c.manual_compose_dir for c in enabled if c.manual_compose_dir}
-    excludes: dict[str, list[str]] = {}
-    exclude_entries: dict[str, list[str]] = {}
-    for c in enabled:
-        if c.excluded_mounts:
-            try:
-                ex = json.loads(c.excluded_mounts)
-            except (json.JSONDecodeError, TypeError):
-                ex = []
-            if ex:
-                excludes[c.compose_project] = ex
-        if c.excluded_entries:
-            try:
-                ee = json.loads(c.excluded_entries)
-            except (json.JSONDecodeError, TypeError):
-                ee = []
-            if ee:
-                exclude_entries[c.compose_project] = ee
-    # DB-Hooks pro Container einsammeln
-    db_hooks_by_project: dict[str, list[dict]] = {}
-    for c in enabled:
-        hooks = db.query(DatabaseHook).filter(DatabaseHook.container_id == c.id, DatabaseHook.enabled == True).all()  # noqa: E712
-        if not hooks:
-            continue
-        db_hooks_by_project.setdefault(c.compose_project, [])
-        for h in hooks:
-            db_hooks_by_project[c.compose_project].append({
-                "type": h.db_type,
-                "name": h.db_name,
-                "hostname": h.hostname,
-                "port": h.port,
-                "username": h.username,
-                "password": h.password,
-            })
-
-    params: dict = {}
-    if overrides:
-        params["compose_dirs"] = overrides
-    if excludes:
-        params["exclude_mounts"] = excludes
-    if exclude_entries:
-        params["exclude_entries"] = exclude_entries
-    if db_hooks_by_project:
-        params["db_hooks"] = db_hooks_by_project
-    return projects, params
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        return [], {}
+    return build_backup_params(agent, db)
 
 
 @router.post("/agents/{agent_id}/backup")

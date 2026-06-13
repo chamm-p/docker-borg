@@ -221,6 +221,8 @@ def _execute_job(job, containers, client: CentralClient):
             exclude_mounts_by_project = (job.params or {}).get("exclude_mounts", {}) if job.params else {}
             exclude_entries_by_project = (job.params or {}).get("exclude_entries", {}) if job.params else {}
             db_hooks_by_project = (job.params or {}).get("db_hooks", {}) if job.params else {}
+            retention = (job.params or {}).get("retention") if job.params else None
+            resources = (job.params or {}).get("resources") if job.params else None
             existing_projects = {c.compose_project for c in targets}
             for project, manual_dir in overrides.items():
                 if project not in existing_projects and project in (job.containers or []):
@@ -262,7 +264,8 @@ def _execute_job(job, containers, client: CentralClient):
                     stream("info", f"  Datenbanken: {', '.join(h['type'] + '/' + h['name'] for h in db_hooks)}")
                 r = worker.run_backup(c, lambda m, lvl="info": stream(lvl, m),
                                        excluded_mounts=excludes, db_hooks=db_hooks,
-                                       excluded_entries=exclude_entries)
+                                       excluded_entries=exclude_entries,
+                                       retention=retention, resources=resources)
                 for log in r.logs:
                     client.report_job(job.job_id, "running", logs=[log])
                 if r.success:

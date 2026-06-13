@@ -41,6 +41,19 @@ class Agent(Base):
     cached_archives: Mapped[str] = mapped_column(Text, default="[]")
     cached_archives_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Aufbewahrung (Retention) — pro Agent. mode: 'simple' (keep_last) oder
+    # 'advanced' (keep_daily/weekly/monthly).
+    retention_mode: Mapped[str] = mapped_column(String(20), default="simple")
+    keep_last: Mapped[int] = mapped_column(Integer, default=7)
+    keep_daily: Mapped[int] = mapped_column(Integer, default=7)
+    keep_weekly: Mapped[int] = mapped_column(Integer, default=4)
+    keep_monthly: Mapped[int] = mapped_column(Integer, default=6)
+    prune_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Worker-Resource-Limits
+    worker_mem_mb: Mapped[int] = mapped_column(Integer, default=1024)
+    worker_cpus: Mapped[str] = mapped_column(String(10), default="")  # leer = kein hartes CPU-Limit
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     containers: Mapped[list["Container"]] = relationship(back_populates="agent", cascade="all, delete-orphan")

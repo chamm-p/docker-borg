@@ -128,6 +128,30 @@ _DB_BORGMATIC_KEY = {
 }
 
 
+def _retention_to_config(retention: dict | None) -> dict:
+    """Übersetzt Retention-Settings in borgmatic keep_* Keys.
+
+    mode 'simple': keep_secondly=N entspricht borg --keep-last N (die N
+        neuesten Archive behalten — exakt das 'wie viele Versionen' Modell).
+    mode 'advanced': keep_daily/weekly/monthly.
+    Gibt {} zurück wenn nichts Sinnvolles gesetzt → dann KEIN prune.
+    """
+    if not retention:
+        return {}
+    mode = retention.get("mode", "simple")
+    out: dict = {}
+    if mode == "advanced":
+        for unit in ("daily", "weekly", "monthly"):
+            v = int(retention.get(f"keep_{unit}") or 0)
+            if v > 0:
+                out[f"keep_{unit}"] = v
+    else:
+        n = int(retention.get("keep_last") or 0)
+        if n > 0:
+            out["keep_secondly"] = n  # == borg --keep-last N
+    return out
+
+
 def _build_borgmatic_config(
     container: ContainerInfo,
     repo_path: str,
@@ -135,6 +159,7 @@ def _build_borgmatic_config(
     excluded_mounts: set | None = None,
     db_hooks: list[dict] | None = None,
     excluded_entries: list[str] | None = None,
+    retention: dict | None = None,
 ) -> dict:
     """Produces a borgmatic config dict for one compose project."""
     excluded = set(excluded_mounts or [])
@@ -205,6 +230,14 @@ def _build_borgmatic_config(
 
     for key, items in grouped.items():
         config[key] = items
+
+    # Retention (keep_*) — matched archives auf dieses Projekt einschränken,
+    # damit prune nur die Archive DIESES Compose-Projekts ausdünnt und nicht
+    # die anderer Projekte im selben Repo wegräumt.
+    keep = _retention_to_config(retention)
+    if keep:
+        config.update(keep)
+        config["match_archives"] = f"sh:{archive_prefix}-*"
 
     return config
 
@@ -323,6 +356,7 @@ def _spawn_worker(
     volumes_from_target=None,
     extra_volumes: dict | None = None,
     extra_env: dict | None = None,
+    resources: dict | None = None,
     on_log,
 ) -> tuple[int, dict]:
     """Common worker spawn + log streaming. Returns (exit_code, extra_state)."""
@@ -343,6 +377,9 @@ def _spawn_worker(
         "BORG_REPO": _resolve_repo_path(),
         "DBORG_CONFIG_PATH": config_path_worker,
         "TZ": os.environ.get("TZ", "UTC"),
+        # borg/borgmatic immer mit niedrigster CPU/IO-Priorität fahren, damit
+        # das Backup laufende Workloads (z.B. ML-Inferenz) nicht ausbremst.
+        "DBORG_NICE": "1",
     }
     if settings.backup_type == "scp":
         env["BORG_RSH"] = (
@@ -373,6 +410,12 @@ def _spawn_worker(
         devices = ["/dev/fuse:/dev/fuse"]
         security_opt = ["apparmor=unconfined"]
 
+    res = resources or {}
+    mem_mb = int(res.get("mem_mb") or 0)
+    if mem_mb <= 0:
+        mem_mb = 1024  # vernünftiger Default; 512m war zu knapp für große Repos
+    mem_str = f"{mem_mb}m"
+
     run_kwargs: dict = {
         "image": WORKER_IMAGE,
         "command": [mode] + (extra_args or []),
@@ -381,12 +424,20 @@ def _spawn_worker(
         "tty": False,
         "environment": env,
         "volumes": volumes,
-        "mem_limit": "512m",
-        "memswap_limit": "512m",
+        "mem_limit": mem_str,
+        "memswap_limit": mem_str,
         "cap_add": cap_add,
         "devices": devices,
         "security_opt": security_opt,
     }
+    # Optionales CPU-Limit (cores). 0/leer = kein hartes Limit (nice/ionice
+    # sorgt ohnehin für niedrige Priorität).
+    try:
+        cpus = float(res.get("cpus") or 0)
+    except (TypeError, ValueError):
+        cpus = 0.0
+    if cpus > 0:
+        run_kwargs["nano_cpus"] = int(cpus * 1_000_000_000)
     if volumes_from_target is not None:
         if isinstance(volumes_from_target, list):
             run_kwargs["volumes_from"] = [f"{c.name}:ro" for c in volumes_from_target]
@@ -441,7 +492,9 @@ def _spawn_worker(
 def run_backup(container: ContainerInfo, on_log,
                excluded_mounts: list[str] | None = None,
                db_hooks: list[dict] | None = None,
-               excluded_entries: list[str] | None = None) -> WorkerResult:
+               excluded_entries: list[str] | None = None,
+               retention: dict | None = None,
+               resources: dict | None = None) -> WorkerResult:
     """Run a backup for one compose project via an ephemeral borgmatic worker."""
     start = time.time()
     docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
@@ -457,7 +510,13 @@ def run_backup(container: ContainerInfo, on_log,
         config = _build_borgmatic_config(container, repo_path, archive_prefix,
                                           excluded_mounts=set(excluded_mounts or []),
                                           db_hooks=db_hooks,
-                                          excluded_entries=excluded_entries)
+                                          excluded_entries=excluded_entries,
+                                          retention=retention)
+
+        keep = _retention_to_config(retention)
+        prune = bool(keep)
+        if prune:
+            on_log(f"Retention aktiv ({', '.join(f'{k}={v}' for k, v in keep.items())}) — prune+compact nach Backup", "info")
 
         extra_volumes: dict = {}
         if container.compose_dir:
@@ -469,6 +528,8 @@ def run_backup(container: ContainerInfo, on_log,
             mode="create",
             volumes_from_target=targets,
             extra_volumes=extra_volumes,
+            extra_env={"DBORG_PRUNE": "1"} if prune else None,
+            resources=resources,
             on_log=on_log,
         )
         duration = round(time.time() - start, 2)

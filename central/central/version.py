@@ -1,4 +1,19 @@
-__version__ = "0.5.22"
+__version__ = "0.6.0"
+# v0.6.0 — Stabilitäts-Block (Items 1-4 aus dem Praxis-Feedback):
+# - PRUNE+RETENTION endlich scharf: agent-weite Aufbewahrung (einfach 'letzte N'
+#   ODER erweitert täglich/wöchentlich/monatlich). Jeder Backup-Lauf macht
+#   create→prune→compact. match_archives scoped pro Compose-Projekt, sodass
+#   Projekte sich nicht gegenseitig wegprunen. (Vorher: NIE geprunt → Platte voll.)
+# - DB dump-only: bei aktivem DB-Hook wird das rohe Daten-Verzeichnis automatisch
+#   aus dem Backup ausgeschlossen (kein pg_wal-Müll mehr, massiv kleiner). Discovery
+#   ermittelt das Daten-Verzeichnis und liefert raw_exclude.
+# - Resource-Discipline: Worker läuft mit ionice idle + nice 19 (sprengt das
+#   System nicht mehr), RAM-Limit (default 1024MB) + optionales CPU-Limit, beides
+#   pro Agent im UI einstellbar.
+# - Größenschätzung pro Agent + pro Container im Container-Tab (DB-Raw rausgerechnet).
+# - Scheduler nutzt jetzt dieselbe Param-Logik wie manuelle Backups (vorher
+#   ignorierten geplante Backups Excludes UND DB-Hooks komplett).
+APP_VERSION = __version__
 # v0.5.20 — Stale-State-Cleanup im UI:
 # - Connection-Fehler-Banner blendet sich aus, sobald ein neueres erfolg-
 #   reiches backup/verify/archive_list existiert (Banner hängt nicht mehr

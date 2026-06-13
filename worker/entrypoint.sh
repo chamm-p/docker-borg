@@ -12,6 +12,13 @@ shift || true
 
 CFG="${DBORG_CONFIG_PATH:-/etc/borgmatic.d/config.yaml}"
 
+# Niedrige CPU/IO-Priorität, damit das Backup laufende Workloads nicht
+# ausbremst (ML-Inferenz etc.). DBORG_NICE=1 → ionice idle + nice 19.
+NICE=""
+if [ "$DBORG_NICE" = "1" ]; then
+    NICE="ionice -c 3 nice -n 19"
+fi
+
 # Optional WebDAV mount preparation
 if [ -n "$DBORG_WEBDAV_URL" ]; then
     mkdir -p /mnt/webdav
@@ -75,10 +82,17 @@ case "$MODE" in
                 echo "Repository initialisiert."
             fi
         fi
-        exec borgmatic --config "$CFG" --stats -v 1 --progress create "$@"
+        # Retention: wenn DBORG_PRUNE=1, nach dem create direkt prune + compact
+        # (prune entfernt Archive nach keep_*-Regeln, compact gibt den Platz im
+        # Repo tatsächlich frei).
+        if [ "$DBORG_PRUNE" = "1" ]; then
+            exec $NICE borgmatic --config "$CFG" --stats -v 1 --progress create prune compact "$@"
+        else
+            exec $NICE borgmatic --config "$CFG" --stats -v 1 --progress create "$@"
+        fi
         ;;
-    check)   exec borgmatic --config "$CFG" --stats -v 2 --progress check "$@" ;;
-    prune)   exec borgmatic --config "$CFG" --stats -v 1 prune  "$@" ;;
+    check)   exec $NICE borgmatic --config "$CFG" --stats -v 2 --progress check "$@" ;;
+    prune)   exec $NICE borgmatic --config "$CFG" --stats -v 1 prune compact "$@" ;;
     list)    exec borgmatic --config "$CFG" list "$@" ;;
     rinfo)   exec borgmatic --config "$CFG" rinfo "$@" ;;
     restore) exec borgmatic --config "$CFG" restore "$@" ;;

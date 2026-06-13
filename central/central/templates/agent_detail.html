@@ -360,9 +360,16 @@ function revealPassphrase() {
 {# ───────────── Container ───────────── #}
 {% elif tab == 'containers' %}
 <div class="card">
-    <div class="card-header">
-        <h5 class="mb-1"><i class="bi bi-box-seam me-2"></i>Container</h5>
-        <p class="text-muted small mb-0">Wähle, welche Compose-Projekte im Backup berücksichtigt werden sollen.</p>
+    <div class="card-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <h5 class="mb-1"><i class="bi bi-box-seam me-2"></i>Container</h5>
+            <p class="text-muted small mb-0">Wähle, welche Compose-Projekte im Backup berücksichtigt werden sollen.</p>
+        </div>
+        <div class="text-end">
+            <div class="small text-muted">geschätztes Backup-Volumen (aktiv, unkomprimiert)</div>
+            <div class="fs-5 fw-bold">{{ est_total|bytesize }}</div>
+            <div class="small text-muted">~ {{ (est_total * 0.5)|bytesize }}–{{ (est_total * 0.7)|bytesize }} nach Kompression{% if est_has_db %} · zzgl. DB-Dumps{% endif %}</div>
+        </div>
     </div>
     <div class="card-body p-0">
         {% if containers %}
@@ -454,6 +461,9 @@ function revealPassphrase() {
                                     {% endif %}
                                 {% else %}
                                 <span class="badge text-bg-warning" title="Kein Compose-Pfad, keine externen Volumes, keine DB-Hooks — es würde nichts gesichert"><i class="bi bi-exclamation-triangle me-1"></i>nichts zu sichern</span>
+                                {% endif %}
+                                {% if c.backup_enabled and c._est_bytes %}
+                                <div class="small text-muted mt-1" title="Geschätzte unkomprimierte Größe der eingeschlossenen Inhalte{% if c._has_db_dump %} (DB-Roh-Verzeichnis exkludiert, Dump kommt zusätzlich){% endif %}"><i class="bi bi-hdd me-1"></i>~{{ c._est_bytes|bytesize }}{% if c._has_db_dump %} + Dump{% endif %}</div>
                                 {% endif %}
                             </td>
                         </tr>
@@ -592,6 +602,80 @@ function revealPassphrase() {
 
 {# ───────────── Zeitplan ───────────── #}
 {% elif tab == 'schedule' %}
+
+{# ── Aufbewahrung & Ressourcen (Agent-weit) ── #}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-hourglass-split me-2"></i>Aufbewahrung &amp; Ressourcen</h5>
+        <p class="text-muted small mb-0">Gilt für alle Backups dieses Agents (manuell wie geplant). Ohne aktive Aufbewahrung wächst das Repository unbegrenzt — die Platte läuft voll.</p>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/agents/{{ agent.id }}/retention">
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" name="prune_enabled" id="prune_enabled" {% if agent.prune_enabled %}checked{% endif %}>
+                <label class="form-check-label" for="prune_enabled"><strong>Alte Archive automatisch ausdünnen (prune + compact)</strong></label>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small text-muted">Modell</label>
+                <div class="btn-group d-block" role="group">
+                    <input type="radio" class="btn-check" name="retention_mode" id="rm_simple" value="simple" {% if agent.retention_mode != 'advanced' %}checked{% endif %} onchange="toggleRetentionMode()">
+                    <label class="btn btn-outline-primary btn-sm" for="rm_simple">Einfach: letzte N</label>
+                    <input type="radio" class="btn-check" name="retention_mode" id="rm_adv" value="advanced" {% if agent.retention_mode == 'advanced' %}checked{% endif %} onchange="toggleRetentionMode()">
+                    <label class="btn btn-outline-primary btn-sm" for="rm_adv">Erweitert: täglich/wöchentlich/monatlich</label>
+                </div>
+            </div>
+
+            <div id="ret-simple" class="mb-3" style="max-width: 320px;">
+                <label for="keep_last" class="form-label">Anzahl der letzten Backups, die behalten werden</label>
+                <input type="number" name="keep_last" id="keep_last" class="form-control" min="1" value="{{ agent.keep_last or 7 }}">
+                <div class="form-text">z.B. 3 = nur die 3 jüngsten Archive pro Projekt bleiben erhalten.</div>
+            </div>
+
+            <div id="ret-advanced" class="row g-3 mb-3" style="max-width: 600px;">
+                <div class="col-md-4">
+                    <label for="keep_daily" class="form-label">Tägliche</label>
+                    <input type="number" name="keep_daily" id="keep_daily" class="form-control" min="0" value="{{ agent.keep_daily or 7 }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="keep_weekly" class="form-label">Wöchentliche</label>
+                    <input type="number" name="keep_weekly" id="keep_weekly" class="form-control" min="0" value="{{ agent.keep_weekly or 4 }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="keep_monthly" class="form-label">Monatliche</label>
+                    <input type="number" name="keep_monthly" id="keep_monthly" class="form-control" min="0" value="{{ agent.keep_monthly or 6 }}">
+                </div>
+            </div>
+
+            <hr>
+            <h6 class="text-uppercase text-muted small mb-3"><i class="bi bi-cpu me-1"></i>Ressourcen-Limits des Backup-Workers</h6>
+            <p class="text-muted small mb-3">Der Worker läuft ohnehin mit niedrigster CPU/IO-Priorität (nice + ionice idle), damit laufende Dienste nicht ausgebremst werden. Zusätzlich harte Limits:</p>
+            <div class="row g-3 mb-3" style="max-width: 600px;">
+                <div class="col-md-6">
+                    <label for="worker_mem_mb" class="form-label">RAM-Limit (MB)</label>
+                    <input type="number" name="worker_mem_mb" id="worker_mem_mb" class="form-control" min="256" step="128" value="{{ agent.worker_mem_mb or 1024 }}">
+                    <div class="form-text">Default 1024. Zu niedrig → Worker wird bei großen Repos vom Kernel gekillt.</div>
+                </div>
+                <div class="col-md-6">
+                    <label for="worker_cpus" class="form-label">CPU-Limit (Kerne, leer = ohne)</label>
+                    <input type="text" name="worker_cpus" id="worker_cpus" class="form-control" placeholder="z.B. 2" value="{{ agent.worker_cpus }}">
+                    <div class="form-text">Leer lassen = kein hartes Limit (nice/ionice reicht meist).</div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+        </form>
+    </div>
+</div>
+<script>
+function toggleRetentionMode() {
+    var adv = document.getElementById('rm_adv').checked;
+    document.getElementById('ret-simple').style.display = adv ? 'none' : 'block';
+    document.getElementById('ret-advanced').style.display = adv ? 'flex' : 'none';
+}
+toggleRetentionMode();
+</script>
+
 {% if schedules %}
 <div class="card mb-4">
     <div class="card-header"><h5 class="mb-0">Aktive Zeitpläne</h5></div>
@@ -607,7 +691,7 @@ function revealPassphrase() {
                         {% if s.enabled %}<span class="badge text-bg-success">aktiv</span>
                         {% else %}<span class="badge text-bg-secondary">pausiert</span>{% endif %}
                     </td>
-                    <td class="text-muted small">{% if s.prune_after %}{{ s.keep_daily }}t / {{ s.keep_weekly }}w / {{ s.keep_monthly }}m{% else %}keine{% endif %}</td>
+                    <td class="text-muted small">{% if agent.prune_enabled %}{% if agent.retention_mode == 'advanced' %}{{ agent.keep_daily }}t / {{ agent.keep_weekly }}w / {{ agent.keep_monthly }}m{% else %}letzte {{ agent.keep_last }}{% endif %}{% else %}keine{% endif %}</td>
                     <td>
                         <form method="post" action="/agents/{{ agent.id }}/schedule/{{ s.id }}/delete" onsubmit="return confirm('Zeitplan löschen?')">
                             <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
@@ -671,25 +755,7 @@ function revealPassphrase() {
                 </div>
             </div>
 
-            <h6 class="text-uppercase text-muted small mb-3 mt-4">Aufbewahrung</h6>
-            <div class="form-check form-switch mb-3">
-                <input class="form-check-input" type="checkbox" name="prune_after" id="prune_after" checked>
-                <label class="form-check-label" for="prune_after">Alte Archive nach Backup ausdünnen (prune)</label>
-            </div>
-            <div class="row g-3 mb-3" style="max-width: 600px;">
-                <div class="col-md-4">
-                    <label for="keep_daily" class="form-label">Tägliche</label>
-                    <input type="number" name="keep_daily" id="keep_daily" class="form-control" min="0" value="7">
-                </div>
-                <div class="col-md-4">
-                    <label for="keep_weekly" class="form-label">Wöchentliche</label>
-                    <input type="number" name="keep_weekly" id="keep_weekly" class="form-control" min="0" value="4">
-                </div>
-                <div class="col-md-4">
-                    <label for="keep_monthly" class="form-label">Monatliche</label>
-                    <input type="number" name="keep_monthly" id="keep_monthly" class="form-control" min="0" value="6">
-                </div>
-            </div>
+            <p class="text-muted small mt-3 mb-3"><i class="bi bi-info-circle me-1"></i>Aufbewahrung &amp; Prune werden oben agent-weit konfiguriert und gelten für jeden Lauf dieses Zeitplans.</p>
 
             <div class="form-check form-switch mb-4">
                 <input class="form-check-input" type="checkbox" name="enabled" id="enabled" checked>

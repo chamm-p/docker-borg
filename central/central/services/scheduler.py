@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import Agent, Container, Job, Schedule
 from ..config import settings
+from .backup_params import build_backup_params
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +65,10 @@ def _create_scheduled_jobs(db: Session):
                 agent.borg_passphrase = secrets.token_urlsafe(32)
                 logger.info("Auto-generated passphrase for agent %s ahead of scheduled backup", agent.hostname)
 
-            enabled_containers = (
-                db.query(Container)
-                .filter(Container.agent_id == agent.id, Container.backup_enabled == True)  # noqa: E712
-                .all()
-            )
-            projects = sorted({c.compose_project for c in enabled_containers if c.compose_project})
-            overrides = {c.compose_project: c.manual_compose_dir for c in enabled_containers if c.manual_compose_dir}
-            params = {"compose_dirs": overrides} if overrides else {}
+            # Gleiche Param-Logik wie manuelle Backups: Excludes, DB-Hooks,
+            # DB-Raw-Auto-Exclude, Retention (= prune+compact im Backup-Lauf),
+            # Resource-Limits. Kein separater prune-Job mehr nötig.
+            projects, params = build_backup_params(agent, db)
             job = Job(
                 agent_id=agent.id,
                 schedule_id=schedule.id,
@@ -81,22 +78,6 @@ def _create_scheduled_jobs(db: Session):
             )
             db.add(job)
             logger.info("Scheduled backup job for agent %s (schedule %d)", agent.hostname, schedule.id)
-
-            if schedule.prune_after:
-                prune_params = json.dumps({
-                    "keep": {
-                        "daily": schedule.keep_daily,
-                        "weekly": schedule.keep_weekly,
-                        "monthly": schedule.keep_monthly,
-                    }
-                })
-                prune_job = Job(
-                    agent_id=agent.id,
-                    schedule_id=schedule.id,
-                    job_type="prune",
-                    params=prune_params,
-                )
-                db.add(prune_job)
 
     db.commit()
 

@@ -39,7 +39,57 @@ def _env_dict(container) -> dict[str, str]:
     return result
 
 
-def _detect_db(container) -> dict | None:
+# Default-Daten-Verzeichnis (Container-intern) je DB-Typ — wird auto-exkludiert
+# wenn ein DB-Hook aktiv ist (dump-only Strategie). Liste von möglichen dests.
+_DB_DATADIR_DESTS = {
+    "postgresql": ("/var/lib/postgresql/data", "/var/lib/postgresql", "/bitnami/postgresql"),
+    "mariadb": ("/var/lib/mysql", "/bitnami/mariadb"),
+    "mysql": ("/var/lib/mysql", "/bitnami/mysql"),
+    "mongodb": ("/data/db", "/bitnami/mongodb"),
+}
+
+
+def _db_data_exclude(container, db_type: str, compose_dir_host: str) -> dict | None:
+    """Ermittelt, wo das rohe DB-Daten-Verzeichnis im Backup landet, damit es
+    bei aktivem DB-Hook (dump-only) ausgeschlossen werden kann.
+
+    Rückgabe:
+      {"kind": "entry", "value": "<top-level-name>"} wenn die Daten in einem
+          Unterordner des Compose-Verzeichnisses liegen, ODER
+      {"kind": "mount", "value": "<container-dest>"} wenn sie über ein externes
+          Volume / einen Bind-Mount außerhalb des Compose-Verzeichnisses kommen.
+      None wenn kein Daten-Mount gefunden wurde.
+    """
+    candidates = _DB_DATADIR_DESTS.get(db_type, ())
+    # PGDATA-Override berücksichtigen
+    if db_type == "postgresql":
+        env = _env_dict(container)
+        pgdata = env.get("PGDATA")
+        if pgdata:
+            candidates = (pgdata,) + candidates
+
+    for m in container.attrs.get("Mounts", []):
+        dest = m.get("Destination", "")
+        source = m.get("Source", "")
+        if not dest or not source:
+            continue
+        matched = any(dest == c or dest.startswith(c + "/") or c.startswith(dest + "/") or c == dest
+                      for c in candidates)
+        if not matched:
+            continue
+        if compose_dir_host:
+            try:
+                rel = Path(source).relative_to(compose_dir_host)
+                parts = rel.parts
+                if parts:
+                    return {"kind": "entry", "value": parts[0]}
+            except ValueError:
+                pass
+        return {"kind": "mount", "value": dest}
+    return None
+
+
+def _detect_db(container, compose_dir_host: str = "") -> dict | None:
     image = ""
     if container.image and container.image.tags:
         image = container.image.tags[0].lower()
@@ -60,9 +110,10 @@ def _detect_db(container) -> dict | None:
         return None
 
     env = _env_dict(container)
+    result: dict | None = None
 
     if matched == "postgresql":
-        return {
+        result = {
             "db_type": "postgresql",
             "db_name": env.get("POSTGRES_DB") or env.get("POSTGRESQL_DATABASE") or "postgres",
             "hostname": container.name or "",
@@ -72,8 +123,8 @@ def _detect_db(container) -> dict | None:
             "container": container.name or "",
             "image": image,
         }
-    if matched in ("mariadb", "mysql"):
-        return {
+    elif matched in ("mariadb", "mysql"):
+        result = {
             "db_type": matched,
             "db_name": env.get("MARIADB_DATABASE") or env.get("MYSQL_DATABASE") or "",
             "hostname": container.name or "",
@@ -93,8 +144,8 @@ def _detect_db(container) -> dict | None:
             "container": container.name or "",
             "image": image,
         }
-    if matched == "mongodb":
-        return {
+    elif matched == "mongodb":
+        result = {
             "db_type": "mongodb",
             "db_name": env.get("MONGO_INITDB_DATABASE") or "admin",
             "hostname": container.name or "",
@@ -104,7 +155,10 @@ def _detect_db(container) -> dict | None:
             "container": container.name or "",
             "image": image,
         }
-    return None
+
+    if result is not None:
+        result["raw_exclude"] = _db_data_exclude(container, matched, compose_dir_host)
+    return result
 
 
 def _get_compose_dir(container) -> str | None:
@@ -307,7 +361,7 @@ def discover_containers(manual_paths: dict[str, str] | None = None) -> list[Cont
 
         for c in ctrs:
             backup_mounts.extend(_get_backup_mounts(client, c, compose_dir_host, seen_sources))
-            db = _detect_db(c)
+            db = _detect_db(c, compose_dir_host)
             if db:
                 db_candidates.append(db)
 
