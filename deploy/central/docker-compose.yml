@@ -1,16 +1,24 @@
+# Central / Backend — lokal gebaut (ohne GHCR).
+# Host-spezifische Werte kommen aus .env (siehe .env.example) — diese Datei
+# wird NIE manuell editiert.
+#   cp .env.example .env   # einmalig, dann .env ausfüllen
+#   docker compose up -d --build
 services:
   central:
-    image: ghcr.io/chamm-p/docker-borg-central:latest
+    build:
+      context: ../../central
+      dockerfile: Dockerfile
+    image: dborg-central:local
     container_name: dborg-central
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${DBORG_CENTRAL_PORT:-8089}:8080"
     environment:
-      - TZ=Europe/Zurich
-      - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
-      - DBORG_ADMIN_PASSWORD=CHANGE_ME_ADMIN_PASSWORD
-      - DBORG_SECRET_KEY=CHANGE_ME_SECRET_KEY
-      - DBORG_LOG_LEVEL=INFO
+      - TZ=${TZ:-Europe/Zurich}
+      - DBORG_REGISTRATION_TOKEN=${DBORG_REGISTRATION_TOKEN:?set in .env}
+      - DBORG_ADMIN_PASSWORD=${DBORG_ADMIN_PASSWORD:?set in .env}
+      - DBORG_SECRET_KEY=${DBORG_SECRET_KEY:?set in .env}
+      - DBORG_LOG_LEVEL=${DBORG_LOG_LEVEL:-INFO}
     volumes:
       - central-data:/app/data
 
