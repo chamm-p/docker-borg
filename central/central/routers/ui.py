@@ -277,7 +277,14 @@ def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_por
         if webdav_password and webdav_password != "********":
             agent.webdav_password = webdav_password
         agent.webdav_verify_ssl = webdav_verify_ssl
-        agent.borg_repo = "/mnt/webdav/borg"
+        # Repo-Unterordner pro Agent — sonst schreiben mehrere Agents auf
+        # demselben WebDAV-Share ins selbe Repo (jeder hat aber eine eigene
+        # Passphrase → der zweite kann das Repo des ersten nicht öffnen).
+        safe_host = "".join(
+            ch if ch.isalnum() or ch in "-_" else "-"
+            for ch in (agent.hostname or "agent")
+        )
+        agent.borg_repo = f"/mnt/webdav/{safe_host}"
     # Ziel-Konfig geändert → alter Connection-Fehler ist nicht mehr current state
     if (agent.borg_repo or "") != prev_repo:
         agent.last_connection_ok = None

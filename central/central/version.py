@@ -1,4 +1,4 @@
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 # v0.6.0 — Stabilitäts-Block (Items 1-4 aus dem Praxis-Feedback):
 # - PRUNE+RETENTION endlich scharf: agent-weite Aufbewahrung (einfach 'letzte N'
 #   ODER erweitert täglich/wöchentlich/monatlich). Jeder Backup-Lauf macht
