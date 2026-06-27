@@ -33,6 +33,14 @@ nur auf `main`). Jeder Host klont per **sparse-checkout nur seine Teile** —
 auf Agent-Maschinen liegt kein `central/`, auf dem Central-Host kein
 `agent/`/`worker/`. `git pull` respektiert das automatisch.
 
+**Alles auf einem Host** (z.B. Dev-Maschine oder Central + Agent gemeinsam):
+einfach komplett klonen, ohne sparse:
+```bash
+git clone -b local-deploy https://github.com/chamm-p/docker-borg.git
+```
+Einen bestehenden sparse-Klon nachträglich auf „alles" umstellen:
+`git sparse-checkout disable`.
+
 ---
 
 ## 2. Central / Backend (ARM64-Host)
