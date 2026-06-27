@@ -19,7 +19,7 @@ services:
     environment:
       - TZ=Europe/Zurich
       - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
-      - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080
+      - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8089
       - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
       # Hostpfad-Basis deiner Compose-Projekte (muss = Mount-Source unten sein)
       - DBORG_HOST_BASE_DIR=/home/CHANGE_ME_USER/docker

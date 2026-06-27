@@ -60,9 +60,10 @@ Im Log muss die Migration sauber durchlaufen:
 
 ### 2d. Erreichbar?
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/   # 200 oder 401
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8089/   # 200 oder 401
 ```
-UI: `http://<CENTRAL-IP>:8080` — Login mit `DBORG_ADMIN_PASSWORD`.
+UI: `http://<CENTRAL-IP>:8089` — Login mit `DBORG_ADMIN_PASSWORD`.
+(Host-Port 8089, weil 8080 belegt war — siehe `ports:` in der Compose.)
 Notiere die **Central-IP** und den **Registration-Token** für die Agents.
 
 ---
@@ -72,7 +73,7 @@ Notiere die **Central-IP** und den **Registration-Token** für die Agents.
 ### 3a. Compose anpassen
 `deploy/agent/docker-compose.local.yml` öffnen und eintragen:
 - `DBORG_AGENT_NAME` — eindeutiger Hostname (z.B. `vzulu2`)
-- `DBORG_CENTRAL_URL` — `http://<CENTRAL-IP>:8080`
+- `DBORG_CENTRAL_URL` — `http://<CENTRAL-IP>:8089`
 - `DBORG_REGISTRATION_TOKEN` — **derselbe** wie bei Central
 - `DBORG_HOST_BASE_DIR` — Host-Pfad, unter dem deine Compose-Projekte liegen
   (z.B. `/sync/Docker` oder `/home/user/docker`)

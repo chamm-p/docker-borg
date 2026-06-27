@@ -11,7 +11,9 @@ services:
     container_name: dborg-central
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # Host-Port 8089 (8080 war belegt). Dieser Port muss in DBORG_CENTRAL_URL
+      # der Agents stehen. Container-intern bleibt 8080.
+      - "8089:8080"
     environment:
       - TZ=Europe/Zurich
       - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
