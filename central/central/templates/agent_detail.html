@@ -195,8 +195,14 @@
                 </div>
                 <div class="mb-3">
                     <label for="scp_path" class="form-label">Pfad auf Remote-Host</label>
-                    <input type="text" name="scp_path" id="scp_path" class="form-control" value="{{ agent.scp_path or '' }}" placeholder="/backups/{{ agent.hostname }}">
-                    <div class="form-text">Borg-Repository wird unter diesem Pfad angelegt.</div>
+                    <input type="text" name="scp_path" id="scp_path" class="form-control" value="{{ agent.scp_path or '' }}" placeholder="/share/Public/borg/{{ agent.hostname }}">
+                    <div class="form-text">
+                        <strong>Eigener, leerer Unterordner pro Agent</strong> — borg legt hier sein
+                        Repository an. <strong>Nicht</strong> auf ein Verzeichnis zeigen, das schon
+                        andere Backups/Dateien enthält (z.B. ein bestehendes borg- oder Nextcloud-Backup),
+                        sonst meldet borg <code>is not a valid repository</code>. Empfehlung:
+                        <code>…/borg/{{ agent.hostname }}</code>.
+                    </div>
                 </div>
             </div>
 

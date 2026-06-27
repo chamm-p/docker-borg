@@ -47,27 +47,72 @@
 <script>
 (function() {
     var status = "{{ job.status }}";
+    var box = document.getElementById('log-box');
+    var statusEl = document.getElementById('job-status');
+    // Wieviele Zeilen sind schon im DOM (server-seitig gerendert)?
+    var rendered = box.querySelectorAll('.log-line').length;
+
+    function hasSelection() {
+        var s = window.getSelection();
+        return s && s.toString().length > 0;
+    }
+    function atBottom() {
+        return box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    }
+    // Hängt NUR neue Zeilen an (ersetzt nicht alles) — bestehende Knoten
+    // bleiben erhalten, damit eine Textauswahl beim Refresh nicht verloren geht.
+    function appendLogs(logs) {
+        if (!logs || logs.length <= rendered) return;
+        var stick = atBottom();
+        if (rendered === 0) { var ph = box.querySelector('.text-muted'); if (ph) ph.remove(); }
+        var frag = document.createDocumentFragment();
+        for (var i = rendered; i < logs.length; i++) {
+            var l = logs[i];
+            var line = document.createElement('div'); line.className = 'log-line';
+            var ts = document.createElement('span'); ts.className = 'log-line-ts';
+            ts.textContent = (l.timestamp.indexOf(' ') >= 0 ? l.timestamp.split(' ')[1] : l.timestamp);
+            var lv = document.createElement('span'); lv.className = 'log-line-level ' + l.level;
+            lv.textContent = l.level.toUpperCase();
+            var msg = document.createElement('span'); msg.className = 'log-line-msg';
+            msg.textContent = l.message;
+            line.appendChild(ts); line.appendChild(lv); line.appendChild(msg);
+            frag.appendChild(line);
+        }
+        box.appendChild(frag);
+        rendered = logs.length;
+        // Auto-Scroll nur, wenn man eh unten ist UND gerade nichts markiert.
+        if (stick && !hasSelection()) box.scrollTop = box.scrollHeight;
+    }
+
+    function showDoneHint(st) {
+        if (document.getElementById('job-done-hint')) return;
+        var c = st === 'success' ? 'success' : st === 'failed' ? 'danger' : 'secondary';
+        var hint = document.createElement('div');
+        hint.id = 'job-done-hint';
+        hint.className = 'alert alert-' + c + ' mt-3 mb-0 d-flex justify-content-between align-items-center gap-2';
+        var span = document.createElement('span');
+        span.textContent = 'Job abgeschlossen (' + st + ') — Log vollständig, du kannst es jetzt in Ruhe markieren/kopieren.';
+        var btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-outline-' + c;
+        btn.textContent = 'Seite aktualisieren';
+        btn.onclick = function() { location.reload(); };
+        hint.appendChild(span); hint.appendChild(btn);
+        box.parentNode.appendChild(hint);
+    }
+
     if (status === 'pending' || status === 'running') {
         var jobId = {{ job.id }};
-        var box = document.getElementById('log-box');
-        var statusEl = document.getElementById('job-status');
         var interval = setInterval(function() {
             fetch('/api/v1/ui/jobs/' + jobId + '/logs').then(r => r.json()).then(data => {
                 statusEl.textContent = data.status;
                 var cls = data.status === 'success' ? 'success' : data.status === 'failed' ? 'danger' : data.status === 'pending' ? 'warning' : 'info';
                 statusEl.className = 'badge text-bg-' + cls;
-                if (data.logs && data.logs.length) {
-                    box.innerHTML = data.logs.map(l =>
-                        '<div class="log-line"><span class="log-line-ts">' + l.timestamp.split(' ')[1] + '</span><span class="log-line-level ' + l.level + '">' + l.level.toUpperCase() + '</span><span class="log-line-msg"></span></div>'
-                    ).join('');
-                    var msgs = box.querySelectorAll('.log-line-msg');
-                    data.logs.forEach((l, i) => { msgs[i].textContent = l.message; });
-                    box.scrollTop = box.scrollHeight;
-                }
+                appendLogs(data.logs);
                 if (data.status === 'success' || data.status === 'failed' || data.status === 'cancelled') {
                     clearInterval(interval);
-                    // Reload once so buttons reflect the new (terminal) state
-                    setTimeout(function() { location.reload(); }, 800);
+                    // KEIN Auto-Reload mehr — der würde die Textauswahl killen.
+                    // Stattdessen Hinweis + manueller Aktualisieren-Button.
+                    showDoneHint(data.status);
                 }
             });
         }, 2000);
