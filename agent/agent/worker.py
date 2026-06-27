@@ -336,10 +336,15 @@ def _container_networks(target) -> list[str]:
 
 
 def _resolve_repo_path() -> str:
-    """Path that the WORKER sees for the borg repo."""
+    """Path that the WORKER sees for the borg repo.
+
+    Für SCP nutzen wir direkt das von Central gebaute borg_repo (enthält schon
+    den Agent-Unterordner ssh://…/basis/<hostname>) — eine einzige Quelle,
+    keine doppelte URL-Konstruktion. Für 'local' ist das Repo ins /mnt/repo
+    Volume gemountet.
+    """
     if settings.backup_type == "scp":
-        if settings.scp_host and settings.scp_user and settings.scp_path:
-            return f"ssh://{settings.scp_user}@{settings.scp_host}:{settings.scp_port}/{settings.scp_path.lstrip('/')}"
+        return settings.borg_repo or ""
     if settings.backup_type == "local":
         return "/mnt/repo"
     return "/mnt/repo"

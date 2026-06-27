@@ -267,7 +267,21 @@ def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_por
         agent.scp_user = scp_user
         agent.scp_path = scp_path
         agent.scp_port = scp_port
-        agent.borg_repo = f"ssh://{scp_user}@{scp_host}:{scp_port}/{scp_path.lstrip('/')}" if scp_host and scp_user and scp_path else ""
+        if scp_host and scp_user and scp_path:
+            # scp_path ist ein Basis-Verzeichnis (z.B. /share/Public/docker-backup).
+            # Pro Agent wird darunter automatisch ein eigener Unterordner
+            # <hostname> angelegt — so kollidieren mehrere Agents nicht im selben
+            # Repo, und der Ordner ist garantiert leer/dediziert für borg.
+            safe_host = "".join(
+                ch if ch.isalnum() or ch in "-_" else "-"
+                for ch in (agent.hostname or "agent")
+            )
+            base = scp_path.strip().strip("/")
+            if not base.split("/")[-1] == safe_host:   # nicht doppelt anhängen
+                base = f"{base}/{safe_host}"
+            agent.borg_repo = f"ssh://{scp_user}@{scp_host}:{scp_port}/{base}"
+        else:
+            agent.borg_repo = ""
     elif backup_type == "local":
         agent.local_path = local_path
         agent.borg_repo = local_path or ""

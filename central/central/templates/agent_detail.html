@@ -194,14 +194,16 @@
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label for="scp_path" class="form-label">Pfad auf Remote-Host</label>
-                    <input type="text" name="scp_path" id="scp_path" class="form-control" value="{{ agent.scp_path or '' }}" placeholder="/share/Public/borg/{{ agent.hostname }}">
+                    <label for="scp_path" class="form-label">Basis-Verzeichnis auf dem Remote-Host</label>
+                    <input type="text" name="scp_path" id="scp_path" class="form-control" value="{{ agent.scp_path or '' }}" placeholder="/share/Public/docker-backup">
                     <div class="form-text">
-                        <strong>Eigener, leerer Unterordner pro Agent</strong> — borg legt hier sein
-                        Repository an. <strong>Nicht</strong> auf ein Verzeichnis zeigen, das schon
-                        andere Backups/Dateien enthält (z.B. ein bestehendes borg- oder Nextcloud-Backup),
-                        sonst meldet borg <code>is not a valid repository</code>. Empfehlung:
-                        <code>…/borg/{{ agent.hostname }}</code>.
+                        Generisches Backup-Verzeichnis — darf ruhig schon andere Backups enthalten.
+                        Für diesen Agent wird automatisch der Unterordner
+                        <code>{{ agent.hostname }}</code> darunter angelegt und als borg-Repository
+                        genutzt.
+                        {% if agent.borg_repo and agent.backup_type == 'scp' %}
+                        <br>Aktuelles Ziel: <code>{{ agent.borg_repo }}</code>
+                        {% endif %}
                     </div>
                 </div>
             </div>
