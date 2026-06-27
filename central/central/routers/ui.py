@@ -59,7 +59,7 @@ def _agent_traffic_light(agent: Agent, last_relevant_job: Job | None) -> str:
         age = (datetime.utcnow() - (last_relevant_job.completed_at or last_relevant_job.created_at)).total_seconds()
         if age < 86400:
             return "yellow"
-    if not agent.borg_repo and agent.backup_type not in ("local", "scp", "webdav"):
+    if not agent.borg_repo and agent.backup_type not in ("local", "scp"):
         return "yellow"
     return "green"
 
@@ -259,7 +259,7 @@ def agent_detail(
 
 
 def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
-                       local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl):
+                       local_path):
     prev_repo = agent.borg_repo or ""
     agent.backup_type = backup_type
     if backup_type == "scp":
@@ -271,20 +271,6 @@ def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_por
     elif backup_type == "local":
         agent.local_path = local_path
         agent.borg_repo = local_path or ""
-    elif backup_type == "webdav":
-        agent.webdav_url = webdav_url
-        agent.webdav_user = webdav_user
-        if webdav_password and webdav_password != "********":
-            agent.webdav_password = webdav_password
-        agent.webdav_verify_ssl = webdav_verify_ssl
-        # Repo-Unterordner pro Agent — sonst schreiben mehrere Agents auf
-        # demselben WebDAV-Share ins selbe Repo (jeder hat aber eine eigene
-        # Passphrase → der zweite kann das Repo des ersten nicht öffnen).
-        safe_host = "".join(
-            ch if ch.isalnum() or ch in "-_" else "-"
-            for ch in (agent.hostname or "agent")
-        )
-        agent.borg_repo = f"/mnt/webdav/{safe_host}"
     # Ziel-Konfig geändert → alter Connection-Fehler ist nicht mehr current state
     if (agent.borg_repo or "") != prev_repo:
         agent.last_connection_ok = None
@@ -301,17 +287,13 @@ def update_target(
     scp_path: str = Form(""),
     scp_port: int = Form(22),
     local_path: str = Form(""),
-    webdav_url: str = Form(""),
-    webdav_user: str = Form(""),
-    webdav_password: str = Form(""),
-    webdav_verify_ssl: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
-                       local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
+                       local_path)
     db.commit()
     return RedirectResponse(f"/agents/{agent_id}?tab=target", status_code=303)
 
@@ -405,17 +387,13 @@ def check_target(
     scp_path: str = Form(""),
     scp_port: int = Form(22),
     local_path: str = Form(""),
-    webdav_url: str = Form(""),
-    webdav_user: str = Form(""),
-    webdav_password: str = Form(""),
-    webdav_verify_ssl: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_port,
-                       local_path, webdav_url, webdav_user, webdav_password, webdav_verify_ssl)
+                       local_path)
     db.commit()
 
     # Für SCP delegieren: der Test muss vom Agent aus laufen (nur er sieht das

@@ -46,9 +46,6 @@
                 {% elif agent.backup_type == 'local' %}
                     <p class="mb-1"><span class="badge text-bg-info">Lokal</span></p>
                     <code class="small">{{ agent.local_path or '(nicht gesetzt)' }}</code>
-                {% elif agent.backup_type == 'webdav' %}
-                    <p class="mb-1"><span class="badge text-bg-info">WebDAV</span></p>
-                    <code class="small">{{ agent.webdav_url or '(nicht gesetzt)' }}</code>
                 {% else %}
                     <p class="text-muted">Nicht konfiguriert</p>
                 {% endif %}
@@ -176,7 +173,6 @@
                 <select name="backup_type" id="backup_type" class="form-select" onchange="toggleTargetType()">
                     <option value="scp" {% if agent.backup_type == 'scp' %}selected{% endif %}>SCP / SSH</option>
                     <option value="local" {% if agent.backup_type == 'local' %}selected{% endif %}>Lokaler Mountpoint</option>
-                    <option value="webdav" {% if agent.backup_type == 'webdav' %}selected{% endif %}>WebDAV</option>
                 </select>
             </div>
 
@@ -212,42 +208,6 @@
                     <input type="text" name="local_path" id="local_path" class="form-control" value="{{ agent.local_path or '' }}" placeholder="/mnt/backup">
                     <div class="form-text">Volume muss in den Agent-Container gemountet sein (Bind-Mount oder Docker-Volume).</div>
                 </div>
-            </div>
-
-            <div id="section-webdav" class="target-section" style="display: {{ 'block' if agent.backup_type == 'webdav' else 'none' }}">
-                <hr>
-                <div class="alert alert-warning d-flex align-items-start mb-3">
-                    <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
-                    <div>
-                        <strong>WebDAV ist für borg-Backups suboptimal.</strong> Borg macht viele kleine
-                        atomare Schreib-Operationen auf die Repository-Index-Dateien, was via WebDAV
-                        regelmäßig zu I/O-Fehlern führt — gerade bei großen oder lang laufenden Backups.
-                        Wir mildern das mit aggressivem lokalem Cache und Retry-Logik, aber:
-                        <strong>für produktive Setups ist SCP/SSH die deutlich stabilere Wahl</strong>
-                        (Synology bietet ebenfalls SSH; ein Borg-natives Ziel via SSH umgeht das Problem komplett).
-                    </div>
-                </div>
-                <h6 class="text-uppercase text-muted small mb-3">WebDAV-Verbindung</h6>
-                <div class="mb-3">
-                    <label for="webdav_url" class="form-label">URL</label>
-                    <input type="text" name="webdav_url" id="webdav_url" class="form-control" value="{{ agent.webdav_url or '' }}" placeholder="https://cloud.example.com/remote.php/dav/files/user/backup">
-                </div>
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                        <label for="webdav_user" class="form-label">Benutzer</label>
-                        <input type="text" name="webdav_user" id="webdav_user" class="form-control" value="{{ agent.webdav_user or '' }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="webdav_password" class="form-label">Passwort</label>
-                        <input type="password" name="webdav_password" id="webdav_password" class="form-control" value="{{ '********' if agent.webdav_password else '' }}" placeholder="••••••••">
-                    </div>
-                </div>
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" name="webdav_verify_ssl" id="webdav_verify_ssl" value="true" {% if agent.webdav_verify_ssl or agent.webdav_verify_ssl is none %}checked{% endif %}>
-                    <label class="form-check-label" for="webdav_verify_ssl">SSL-Zertifikat prüfen</label>
-                    <div class="form-text">Standard: aktiviert. Deaktivieren um dem Server blind zu vertrauen (selbst-signierte Zertifikate, interne CAs).</div>
-                </div>
-                <p class="text-muted small mb-0">Repository wird automatisch unter <code>/mnt/webdav/borg</code> abgelegt.</p>
             </div>
 
             <hr class="my-4">

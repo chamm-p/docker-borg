@@ -4,8 +4,6 @@ import socket
 from datetime import datetime
 from pathlib import Path
 
-import httpx
-
 from ..models import Agent
 
 
@@ -15,8 +13,6 @@ def check_connection(agent: Agent) -> tuple[bool, str]:
         return _check_scp(agent)
     if backup_type == "local":
         return _check_local(agent)
-    if backup_type == "webdav":
-        return _check_webdav(agent)
     return False, f"Unbekannter Backup-Typ: {backup_type}"
 
 
@@ -36,32 +32,6 @@ def _check_local(agent: Agent) -> tuple[bool, str]:
     if not agent.local_path:
         return False, "Lokaler Pfad nicht gesetzt"
     return True, f"Pfad „{agent.local_path}“ wird auf dem Agent geprüft, sobald ein Backup läuft"
-
-
-def _check_webdav(agent: Agent) -> tuple[bool, str]:
-    if not agent.webdav_url:
-        return False, "WebDAV-URL nicht gesetzt"
-    auth = None
-    if agent.webdav_user:
-        auth = (agent.webdav_user, agent.webdav_password or "")
-    verify = bool(agent.webdav_verify_ssl) if agent.webdav_verify_ssl is not None else True
-    try:
-        resp = httpx.request(
-            "PROPFIND", agent.webdav_url,
-            auth=auth, timeout=10,
-            headers={"Depth": "0"},
-            verify=verify,
-        )
-    except httpx.RequestError as e:
-        return False, f"WebDAV nicht erreichbar: {e}"
-    info = "" if verify else " (SSL-Verifikation deaktiviert)"
-    if resp.status_code in (200, 207):
-        return True, f"WebDAV erreichbar und Authentifizierung erfolgreich{info}"
-    if resp.status_code == 401:
-        return False, "WebDAV: Authentifizierung fehlgeschlagen (401)"
-    if resp.status_code == 404:
-        return False, "WebDAV: Pfad nicht gefunden (404)"
-    return False, f"WebDAV antwortet mit HTTP {resp.status_code}"
 
 
 def record_result(agent: Agent, ok: bool, message: str) -> None:

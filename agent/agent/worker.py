@@ -342,8 +342,6 @@ def _resolve_repo_path() -> str:
             return f"ssh://{settings.scp_user}@{settings.scp_host}:{settings.scp_port}/{settings.scp_path.lstrip('/')}"
     if settings.backup_type == "local":
         return "/mnt/repo"
-    if settings.backup_type == "webdav":
-        return "/mnt/webdav/borg"
     return "/mnt/repo"
 
 
@@ -388,11 +386,6 @@ def _spawn_worker(
             "-o StrictHostKeyChecking=accept-new "
             "-o BatchMode=yes"
         )
-    if settings.backup_type == "webdav":
-        env["DBORG_WEBDAV_URL"] = settings.webdav_url or ""
-        env["DBORG_WEBDAV_USER"] = settings.webdav_user or ""
-        env["DBORG_WEBDAV_PASSWORD"] = settings.webdav_password or ""
-        env["DBORG_WEBDAV_VERIFY_SSL"] = "true" if settings.webdav_verify_ssl else "false"
     if extra_env:
         env.update(extra_env)
 
@@ -405,10 +398,6 @@ def _spawn_worker(
     cap_add: list[str] = []
     devices: list[str] = []
     security_opt: list[str] = []
-    if settings.backup_type == "webdav":
-        cap_add = ["SYS_ADMIN"]
-        devices = ["/dev/fuse:/dev/fuse"]
-        security_opt = ["apparmor=unconfined"]
 
     res = resources or {}
     mem_mb = int(res.get("mem_mb") or 0)
@@ -604,11 +593,6 @@ def run_list_archives(on_log) -> tuple[WorkerResult, list[dict]]:
                 "-o UserKnownHostsFile=/data/ssh/known_hosts "
                 "-o StrictHostKeyChecking=accept-new -o BatchMode=yes"
             )
-        if settings.backup_type == "webdav":
-            env["DBORG_WEBDAV_URL"] = settings.webdav_url or ""
-            env["DBORG_WEBDAV_USER"] = settings.webdav_user or ""
-            env["DBORG_WEBDAV_PASSWORD"] = settings.webdav_password or ""
-            env["DBORG_WEBDAV_VERIFY_SSL"] = "true" if settings.webdav_verify_ssl else "false"
 
         volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/data", "mode": "rw"}}
         if settings.backup_type == "local" and settings.local_path:
@@ -617,10 +601,6 @@ def run_list_archives(on_log) -> tuple[WorkerResult, list[dict]]:
         cap_add: list[str] = []
         devices: list[str] = []
         security_opt: list[str] = []
-        if settings.backup_type == "webdav":
-            cap_add = ["SYS_ADMIN"]
-            devices = ["/dev/fuse:/dev/fuse"]
-            security_opt = ["apparmor=unconfined"]
 
         # borg list --json (kein borgmatic — schneller, struktiert)
         on_log("Hole Archiv-Liste via borg list --json", "info")

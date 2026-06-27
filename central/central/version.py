@@ -1,4 +1,11 @@
-__version__ = "0.6.1"
+__version__ = "0.7.0"
+# v0.7.0 — WebDAV entfernt, SCP/SSH ist der Weg:
+# - WebDAV-Backup-Ziel komplett raus (UI-Option, Worker-rclone-Mount, fuse-Caps,
+#   Connection-Check). borg auf einem rclone-Mount ist nachweislich unzuverlässig
+#   (Repo landet unvollständig → "Repository has no manifest"), lokal mit zwei
+#   WebDAV-Servern reproduziert. Robustes Remote-Ziel = borg über SSH (borg serve
+#   auf dem NAS), E2E getestet: Backup über mehrere Läufe + Prune + Restore sauber.
+# - Worker-Image: rclone entfernt (war nur für WebDAV).
 # v0.6.0 — Stabilitäts-Block (Items 1-4 aus dem Praxis-Feedback):
 # - PRUNE+RETENTION endlich scharf: agent-weite Aufbewahrung (einfach 'letzte N'
 #   ODER erweitert täglich/wöchentlich/monatlich). Jeder Backup-Lauf macht

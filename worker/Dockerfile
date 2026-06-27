@@ -5,11 +5,11 @@
 # ghcr.io/borgmatic-collective/borgmatic:latest` holen und Client-Liste prüfen.
 FROM ghcr.io/borgmatic-collective/borgmatic@sha256:58b0fe322f46529412924f712773f40a776c956175e30df513b3052dd0bea94d
 
-# rclone (WebDAV) + sshpass (Key-Install) — fuse3 ist im Base.
+# openssh-client für borg-über-SSH (BORG_RSH). rclone/WebDAV entfernt.
 # postgresql16/17/18-client side-by-side, damit der Shim den zum Server passenden
 # pg_dump/pg_restore wählt (pg_restore N sendet SET transaction_timeout an
 # PG <N und crasht). pg18 ist im Base, 16+17 ergänzen wir.
-RUN apk add --no-cache rclone sshpass openssh-client tzdata \
+RUN apk add --no-cache openssh-client tzdata \
         postgresql16-client postgresql17-client
 
 COPY --chmod=755 entrypoint.sh /usr/local/bin/dborg-worker
