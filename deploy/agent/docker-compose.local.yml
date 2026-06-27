@@ -1,0 +1,50 @@
+# Agent — LOKAL gebaut (kein GHCR-Pull).
+# Baut zwei Images:
+#   - dborg-agent:local   (dieser Service, startet als Daemon)
+#   - dborg-worker:local  (Service "worker-build", startet NIE — nur Build)
+# Der Worker wird vom Agent zur Laufzeit per Docker-Socket gestartet,
+# deshalb muss das Image lokal vorliegen (DBORG_WORKER_IMAGE).
+#
+# Bauen (beide Images) + starten (nur agent):
+#   docker compose -f docker-compose.local.yml --profile build build
+#   docker compose -f docker-compose.local.yml up -d
+services:
+  agent:
+    build:
+      context: ../../agent
+      dockerfile: Dockerfile
+    image: dborg-agent:local
+    container_name: dborg-agent
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Zurich
+      - DBORG_AGENT_NAME=CHANGE_ME_HOSTNAME
+      - DBORG_CENTRAL_URL=http://CHANGE_ME_CENTRAL_IP:8080
+      - DBORG_REGISTRATION_TOKEN=CHANGE_ME_REGISTRATION_TOKEN
+      # Hostpfad-Basis deiner Compose-Projekte (muss = Mount-Source unten sein)
+      - DBORG_HOST_BASE_DIR=/home/CHANGE_ME_USER/docker
+      # Lokal gebautes Worker-Image — kein Registry-Pull.
+      # Der Agent versucht beim Start trotzdem ein "docker pull" → die
+      # Warnung "Konnte Worker-Image nicht pullen" ist erwartet & harmlos,
+      # er nutzt dann das lokal gebaute Image.
+      - DBORG_WORKER_IMAGE=dborg-worker:local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/CHANGE_ME_USER/docker:/host/docker:ro
+      - agent-data:/data
+    # Agent orchestriert nur — hartes, kleines Mem-Limit.
+    mem_limit: 128m
+    memswap_limit: 128m
+
+  # Baut NUR das Worker-Image lokal. Profil "build" → startet bei "up" nicht.
+  worker-build:
+    build:
+      context: ../../worker
+      dockerfile: Dockerfile
+    image: dborg-worker:local
+    entrypoint: ["true"]
+    profiles: ["build"]
+    restart: "no"
+
+volumes:
+  agent-data:
