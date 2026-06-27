@@ -45,17 +45,17 @@ if [ -n "$HOST" ] && [ -n "$USER" ]; then
     fi
 fi
 
-# Pick binary. Fallback to default if detection failed.
+# Pick binary dynamisch — Pfad aus der erkannten Major-Version. Damit ist der
+# Shim unabhängig davon, welche postgresqlNN-client genau im Image liegen
+# (Alpine wechselt die mitgelieferten Versionen). Ist der passende Client nicht
+# da, fällt er auf den Default-Client zurück.
 BIN=""
-case "$MAJOR" in
-    14) BIN="/usr/libexec/postgresql14/$CMD" ;;
-    15) BIN="/usr/libexec/postgresql15/$CMD" ;;
-    16) BIN="/usr/libexec/postgresql16/$CMD" ;;
-    17) BIN="/usr/libexec/postgresql17/$CMD" ;;
-esac
+if [ -n "$MAJOR" ] && [ -x "/usr/libexec/postgresql$MAJOR/$CMD" ]; then
+    BIN="/usr/libexec/postgresql$MAJOR/$CMD"
+fi
 
-if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
-    echo "dborg-pg-shim: detected PG major='$MAJOR' (host=$HOST), falling back to default $CMD" >&2
+if [ -z "$BIN" ]; then
+    echo "dborg-pg-shim: PG major='$MAJOR' nicht als Client installiert (host=$HOST) — nutze Default $CMD" >&2
     BIN="/usr/bin/$CMD"
 fi
 

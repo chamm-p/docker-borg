@@ -1,12 +1,16 @@
-FROM ghcr.io/borgmatic-collective/borgmatic:latest
+# Base auf festen Digest gepinnt (war :latest) — sonst floatet Alpine unter uns
+# weg und apk verliert pg-client-Pakete (z.B. postgresql15-client ab Alpine 3.24).
+# Dieser Digest = borgmatic auf Alpine 3.24, bringt pg18 mit; wir ergänzen 16+17.
+# Zum Anheben: neuen Digest via `docker inspect --format '{{index .RepoDigests 0}}'
+# ghcr.io/borgmatic-collective/borgmatic:latest` holen und Client-Liste prüfen.
+FROM ghcr.io/borgmatic-collective/borgmatic@sha256:58b0fe322f46529412924f712773f40a776c956175e30df513b3052dd0bea94d
 
-# rclone for WebDAV targets + sshpass for one-shot key install
-# fuse3 is already in the base image
-# postgresql{14..17}-client side-by-side so we can pick the matching pg_dump/
-# pg_restore based on the target server's major version — pg_restore 17 sends
-# SET transaction_timeout to PG <17 servers and crashes.
+# rclone (WebDAV) + sshpass (Key-Install) — fuse3 ist im Base.
+# postgresql16/17/18-client side-by-side, damit der Shim den zum Server passenden
+# pg_dump/pg_restore wählt (pg_restore N sendet SET transaction_timeout an
+# PG <N und crasht). pg18 ist im Base, 16+17 ergänzen wir.
 RUN apk add --no-cache rclone sshpass openssh-client tzdata \
-        postgresql15-client postgresql16-client postgresql17-client
+        postgresql16-client postgresql17-client
 
 COPY --chmod=755 entrypoint.sh /usr/local/bin/dborg-worker
 COPY --chmod=755 pg-version-shim.sh /usr/local/bin/dborg-pg-shim
