@@ -346,8 +346,10 @@ def _execute_job(job, containers, client: CentralClient):
             archive = job.params.get("archive", "")
             sub_path = job.params.get("sub_path", "")
             host_target = job.params.get("host_target", "")
+            structured = bool(job.params.get("structured", False))
             r = worker.run_restore(archive, lambda m, lvl="info": stream(lvl, m),
-                                   sub_path=sub_path, host_target=host_target)
+                                   sub_path=sub_path, host_target=host_target,
+                                   structured=structured)
             for log in r.logs:
                 client.report_job(job.job_id, "running", logs=[log])
             client.report_job(

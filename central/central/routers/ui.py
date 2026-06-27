@@ -717,6 +717,7 @@ def trigger_restore(
     sub_path: str = Form(""),
     sub_path_custom: str = Form(""),
     host_target: str = Form(""),
+    structured: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -732,6 +733,7 @@ def trigger_restore(
             "archive": archive,
             "sub_path": effective_sub_path,
             "host_target": host_target.strip(),
+            "structured": bool(structured),
         }),
     )
     db.add(job)

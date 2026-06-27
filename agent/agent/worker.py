@@ -675,8 +675,13 @@ def run_list_archives(on_log) -> tuple[WorkerResult, list[dict]]:
         docker_client.close()
 
 
-def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "") -> WorkerResult:
+def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "",
+                structured: bool = False) -> WorkerResult:
     """Extrahiert ein Archiv (oder einen Sub-Pfad).
+
+    structured=True: legt den Inhalt aufgeräumt ab (compose/ volumes/ databases/)
+    statt der rohen borg-internen Struktur — für Restore an einen Zielort, mit
+    dem man arbeiten will.
 
     Wenn host_target gesetzt: dieser HOST-Pfad wird in den Worker gebunden
     und die Dateien landen direkt dort. Andernfalls: Extract ins agent-data
@@ -700,13 +705,15 @@ def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "")
 
     try:
         config = _minimal_config(_resolve_repo_path())
+        # Strukturierter Restore ignoriert sub_path (legt immer alles aufgeräumt ab)
+        mode = "extract-structured" if structured else "extract"
         args = [archive]
-        if sub_path:
+        if sub_path and not structured:
             args.append(sub_path)
         exit_code, _ = _spawn_worker(
             docker_client,
             config=config,
-            mode="extract",
+            mode=mode,
             extra_args=args,
             extra_volumes=extra_volumes or None,
             extra_env=extra_env,
@@ -717,8 +724,9 @@ def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "")
             return WorkerResult(False, JobResult(duration_seconds=duration),
                                 [LogEntry("error", f"Worker exit {exit_code}")])
         location = host_target or "/data/restore (im Agent-Container — via `docker cp dborg-agent:/data/restore <ziel>` abrufbar)"
+        hint = " — aufgeräumt in compose/ volumes/ databases/" if structured else ""
         return WorkerResult(True, JobResult(archive_name=archive, duration_seconds=duration),
-                            [LogEntry("info", f"Wiederherstellung abgeschlossen in {duration}s — Dateien unter: {location}")])
+                            [LogEntry("info", f"Wiederherstellung abgeschlossen in {duration}s — Dateien unter: {location}{hint}")])
     finally:
         docker_client.close()
 

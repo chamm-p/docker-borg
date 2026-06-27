@@ -78,6 +78,38 @@ case "$MODE" in
             exec borg extract --progress --list "$BORG_REPO::$ARCHIVE"
         fi
         ;;
+    extract-structured)
+        # Extrahiert das ganze Archiv und legt es AUFGERÄUMT ab, damit man
+        # damit arbeiten kann, statt die rohe borg-interne Struktur:
+        #   compose/    ← das Compose-Verzeichnis (mnt/compose)
+        #   volumes/    ← die Docker-Volumes (an ihrem Mount-Ziel, z.B. var/lib/…)
+        #   databases/  ← die DB-Dumps (borgmatic/)
+        ARCHIVE=$1
+        TARGET="${DBORG_RESTORE_DIR:-/restore}"
+        if [ -z "$ARCHIVE" ]; then echo "extract-structured: kein Archiv" >&2; exit 2; fi
+        TMP="$TARGET/.extract.$$"
+        mkdir -p "$TMP"; cd "$TMP"
+        echo "Extrahiere ${ARCHIVE} (strukturiert) nach ${TARGET}…"
+        set +e
+        borg extract --progress --list "$BORG_REPO::$ARCHIVE"
+        rc=$?
+        set -e
+        if [ $rc -ne 0 ]; then rm -rf "$TMP"; echo "extract fehlgeschlagen (rc=$rc)" >&2; exit $rc; fi
+        # Compose-Verzeichnis (mit dotfiles wie .env) → compose/
+        if [ -d "$TMP/mnt/compose" ]; then rm -rf "$TARGET/compose"; mv "$TMP/mnt/compose" "$TARGET/compose"; fi
+        # DB-Dumps → databases/
+        if [ -d "$TMP/borgmatic" ]; then rm -rf "$TARGET/databases"; mv "$TMP/borgmatic" "$TARGET/databases"; fi
+        # Alles Übrige (Volumes an ihren Mount-Zielen) → volumes/
+        mkdir -p "$TARGET/volumes"
+        for d in "$TMP"/* "$TMP"/.[!.]*; do
+            [ -e "$d" ] || continue
+            b=$(basename "$d")
+            case "$b" in mnt|borgmatic) continue ;; esac
+            rm -rf "$TARGET/volumes/$b"; mv "$d" "$TARGET/volumes/"
+        done
+        rm -rf "$TMP"
+        echo "Fertig. Struktur unter ${TARGET}: compose/  volumes/  databases/"
+        ;;
     shell)   exec /bin/bash ;;
     *)       echo "Unknown mode: $MODE" >&2 ; exit 2 ;;
 esac
