@@ -26,19 +26,24 @@ docker compose version    # v2
 
 ---
 
-## 1. Repo holen (jeder Host)
+## 1. Branch-Hinweis
 
-Test läuft auf Branch `local-deploy` (triggert **keinen** GHCR-Build — der
-baut nur auf `main`):
-```bash
-git clone -b local-deploy https://github.com/chamm-p/docker-borg.git
-cd docker-borg
-```
+Test läuft auf Branch `local-deploy` (triggert **keinen** GHCR-Build — der baut
+nur auf `main`). Jeder Host klont per **sparse-checkout nur seine Teile** —
+auf Agent-Maschinen liegt kein `central/`, auf dem Central-Host kein
+`agent/`/`worker/`. `git pull` respektiert das automatisch.
 
 ---
 
 ## 2. Central / Backend (ARM64-Host)
 
+Nur die Central-Teile holen:
+```bash
+git clone --filter=blob:none --sparse -b local-deploy https://github.com/chamm-p/docker-borg.git
+cd docker-borg
+git sparse-checkout set central deploy/central
+```
+Konfigurieren:
 ```bash
 cd deploy/central
 cp .env.example .env
@@ -68,6 +73,13 @@ Central-IP, Port und Registration-Token für die Agents notieren.
 
 ## 3. Agent (jede zu sichernde Linux-Maschine)
 
+Nur die Agent-Teile holen (kein `central/`):
+```bash
+git clone --filter=blob:none --sparse -b local-deploy https://github.com/chamm-p/docker-borg.git
+cd docker-borg
+git sparse-checkout set agent worker deploy/agent
+```
+Konfigurieren:
 ```bash
 cd deploy/agent
 cp .env.example .env
