@@ -23,6 +23,31 @@ def _hook_key(db_type: str, hostname: str, db_name: str) -> str:
     return f"{db_type}:{hostname}:{db_name}"
 
 
+def _safe_host(hostname: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in (hostname or "agent"))
+
+
+def build_borg_repo(agent: Agent) -> str:
+    """Effektiver borg-Repo-Pfad für diesen Agent — IMMER frisch berechnet,
+    nicht aus dem (evtl. veralteten) gespeicherten Feld gelesen.
+
+    SCP: scp_path ist ein Basis-Verzeichnis; pro Agent wird automatisch ein
+    eigener Unterordner <hostname> angehängt (eigenes, leeres borg-Repo, keine
+    Kollision zwischen Agents). 'local': der gemountete Pfad.
+    """
+    if agent.backup_type == "scp":
+        if agent.scp_host and agent.scp_user and agent.scp_path:
+            base = (agent.scp_path or "").strip().strip("/")
+            host = _safe_host(agent.hostname)
+            if not base.split("/")[-1] == host:   # nicht doppelt anhängen
+                base = f"{base}/{host}"
+            return f"ssh://{agent.scp_user}@{agent.scp_host}:{agent.scp_port or 22}/{base}"
+        return ""
+    if agent.backup_type == "local":
+        return agent.local_path or ""
+    return ""
+
+
 def retention_for(agent: Agent) -> dict | None:
     """Retention-Dict fürs Job-Param, oder None wenn Prune deaktiviert."""
     if not agent.prune_enabled:

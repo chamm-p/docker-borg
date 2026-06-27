@@ -201,8 +201,8 @@
                         Für diesen Agent wird automatisch der Unterordner
                         <code>{{ agent.hostname }}</code> darunter angelegt und als borg-Repository
                         genutzt.
-                        {% if agent.borg_repo and agent.backup_type == 'scp' %}
-                        <br>Aktuelles Ziel: <code>{{ agent.borg_repo }}</code>
+                        {% if effective_repo and agent.backup_type == 'scp' %}
+                        <br>Aktuelles Ziel: <code>{{ effective_repo }}</code>
                         {% endif %}
                     </div>
                 </div>

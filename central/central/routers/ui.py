@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Agent, Container, DatabaseHook, Job, JobLog, Schedule
 from ..services.admin import get_admin_password, set_admin_password
-from ..services.backup_params import build_backup_params
+from ..services.backup_params import build_backup_params, build_borg_repo
 from ..services.connection_check import check_connection, record_result
 from ..services.format import localtime, localtime_short, relative
 from ..services.schedule_helpers import cron_for, human_for
@@ -255,6 +255,7 @@ def agent_detail(
         "connection_error_active": _connection_error_active(agent, last_success_relevant),
         "est_total": est_total,
         "est_has_db": est_has_db,
+        "effective_repo": build_borg_repo(agent),
     })
 
 
@@ -267,24 +268,10 @@ def _apply_target_form(agent, backup_type, scp_host, scp_user, scp_path, scp_por
         agent.scp_user = scp_user
         agent.scp_path = scp_path
         agent.scp_port = scp_port
-        if scp_host and scp_user and scp_path:
-            # scp_path ist ein Basis-Verzeichnis (z.B. /share/Public/docker-backup).
-            # Pro Agent wird darunter automatisch ein eigener Unterordner
-            # <hostname> angelegt — so kollidieren mehrere Agents nicht im selben
-            # Repo, und der Ordner ist garantiert leer/dediziert für borg.
-            safe_host = "".join(
-                ch if ch.isalnum() or ch in "-_" else "-"
-                for ch in (agent.hostname or "agent")
-            )
-            base = scp_path.strip().strip("/")
-            if not base.split("/")[-1] == safe_host:   # nicht doppelt anhängen
-                base = f"{base}/{safe_host}"
-            agent.borg_repo = f"ssh://{scp_user}@{scp_host}:{scp_port}/{base}"
-        else:
-            agent.borg_repo = ""
+        agent.borg_repo = build_borg_repo(agent)
     elif backup_type == "local":
         agent.local_path = local_path
-        agent.borg_repo = local_path or ""
+        agent.borg_repo = build_borg_repo(agent)
     # Ziel-Konfig geändert → alter Connection-Fehler ist nicht mehr current state
     if (agent.borg_repo or "") != prev_repo:
         agent.last_connection_ok = None

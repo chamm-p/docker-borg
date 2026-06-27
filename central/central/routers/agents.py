@@ -81,9 +81,12 @@ def _apply_db_candidates(agent_id: int, container_row, candidates: list[dict], d
 
 
 def _backup_config(agent: Agent) -> BackupConfig:
+    from ..services.backup_params import build_borg_repo
     return BackupConfig(
         backup_type=agent.backup_type or "scp",
-        borg_repo=agent.borg_repo or "",
+        # IMMER frisch berechnen (inkl. Agent-Unterordner), nicht das evtl.
+        # veraltete gespeicherte Feld nutzen → kein "Target neu speichern" nötig.
+        borg_repo=build_borg_repo(agent) or agent.borg_repo or "",
         borg_passphrase=agent.borg_passphrase or "",
         scp_host=agent.scp_host or "",
         scp_user=agent.scp_user or "",
