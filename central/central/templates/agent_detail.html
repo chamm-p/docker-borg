@@ -895,6 +895,15 @@ function toggleScheduleFields() {
                             <button type="button" class="btn btn-link btn-sm text-muted" data-bs-toggle="collapse" data-bs-target="#restore-{{ loop.index }}">Abbrechen</button>
                         </form>
 
+                        <form method="post" action="/agents/{{ agent.id }}/restore" class="p-2 border-top mt-2"
+                              onsubmit="return confirm('ACHTUNG: Komplett-Restore an den Originalort.\n\nDas Projekt {{ project }} wird gestoppt, Compose-Verzeichnis + Volumes werden ÜBERSCHRIEBEN, dann wird neu gestartet und der DB-Dump eingespielt.\n\nAktuelle Daten gehen verloren. Fortfahren?')">
+                            <input type="hidden" name="archive" value="{{ a.name }}">
+                            <input type="hidden" name="mode" value="inplace">
+                            <input type="hidden" name="project" value="{{ project }}">
+                            <p class="small mb-2"><i class="bi bi-exclamation-triangle-fill me-1 text-danger"></i><strong>An Originalort wiederherstellen (läuft wieder)</strong> — stoppt <code>{{ project }}</code>, schreibt Compose-Verzeichnis + Volumes zurück, startet neu und spielt die DB-Dumps ein. <span class="text-danger">Überschreibt die aktuellen Daten.</span></p>
+                            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>Komplett an Originalort wiederherstellen</button>
+                        </form>
+
                         {% if project in projects_with_hooks %}
                         <form method="post" action="/agents/{{ agent.id }}/db-restore" class="p-2 border-top mt-2" onsubmit="return confirm('DB-Dumps aus diesem Archiv in die laufenden DB-Container einspielen? Bestehende DB-Inhalte werden überschrieben.')">
                             <input type="hidden" name="archive" value="{{ a.name }}">

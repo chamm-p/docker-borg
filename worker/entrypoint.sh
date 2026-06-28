@@ -71,11 +71,15 @@ case "$MODE" in
         fi
         mkdir -p "$TARGET"
         cd "$TARGET"
-        echo "Extrahiere ${ARCHIVE} nach ${TARGET}${SUBPATH:+ (Pfad: $SUBPATH)}"
+        # DBORG_STRIP: führende Pfadkomponenten abschneiden, damit der Inhalt
+        # eines Sub-Pfads direkt im Ziel landet (für Restore an Originalort).
+        STRIP_ARG=""
+        [ -n "$DBORG_STRIP" ] && STRIP_ARG="--strip-components $DBORG_STRIP"
+        echo "Extrahiere ${ARCHIVE} nach ${TARGET}${SUBPATH:+ (Pfad: $SUBPATH)}${DBORG_STRIP:+ (strip $DBORG_STRIP)}"
         if [ -n "$SUBPATH" ]; then
-            exec borg extract --progress --list "$BORG_REPO::$ARCHIVE" "$SUBPATH"
+            exec borg extract --progress --list $STRIP_ARG "$BORG_REPO::$ARCHIVE" "$SUBPATH"
         else
-            exec borg extract --progress --list "$BORG_REPO::$ARCHIVE"
+            exec borg extract --progress --list $STRIP_ARG "$BORG_REPO::$ARCHIVE"
         fi
         ;;
     extract-structured)

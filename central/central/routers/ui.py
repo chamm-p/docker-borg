@@ -718,24 +718,45 @@ def trigger_restore(
     sub_path_custom: str = Form(""),
     host_target: str = Form(""),
     structured: bool = Form(False),
+    mode: str = Form(""),
+    project: str = Form(""),
     db: Session = Depends(get_db),
 ):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         return HTMLResponse("Agent nicht gefunden", status_code=404)
     ensure_agent_passphrase(agent, db)
-    # Sentinel: "__custom__" radio selected → take the freitext field
-    effective_sub_path = sub_path_custom.strip() if sub_path == "__custom__" else sub_path.strip()
-    job = Job(
-        agent_id=agent_id,
-        job_type="restore",
-        params=json.dumps({
+
+    if mode == "inplace":
+        # Komplett-Restore an den Originalort. Plan (Compose-Dir, aktive Mounts,
+        # DB-Hooks) aus den gespeicherten Container-Daten bauen.
+        from ..services.backup_params import restore_plan_for
+        container_row = (
+            db.query(Container)
+            .filter(Container.agent_id == agent_id, Container.compose_project == project)
+            .first()
+        )
+        if not container_row:
+            return HTMLResponse(f"Projekt {project} nicht gefunden", status_code=404)
+        plan = restore_plan_for(container_row, db)
+        params = {
+            "archive": archive,
+            "mode": "inplace",
+            "project": project,
+            "compose_dir": plan["compose_dir"],
+            "mounts": plan["mounts"],
+            "db_hooks": plan["db_hooks"],
+        }
+    else:
+        # Sentinel: "__custom__" radio selected → take the freitext field
+        effective_sub_path = sub_path_custom.strip() if sub_path == "__custom__" else sub_path.strip()
+        params = {
             "archive": archive,
             "sub_path": effective_sub_path,
             "host_target": host_target.strip(),
             "structured": bool(structured),
-        }),
-    )
+        }
+    job = Job(agent_id=agent_id, job_type="restore", params=json.dumps(params))
     db.add(job)
     db.commit()
     db.refresh(job)

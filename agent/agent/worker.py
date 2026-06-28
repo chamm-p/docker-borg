@@ -731,6 +731,111 @@ def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "",
         docker_client.close()
 
 
+def _extract_to(docker_client, archive: str, sub_path: str, strip: int, on_log,
+                host_target: str | None = None, volume_name: str | None = None) -> int:
+    """Ein Worker-Spawn: extrahiert sub_path aus archive, schneidet 'strip'
+    Pfadkomponenten ab und schreibt den Inhalt direkt ins Ziel — entweder einen
+    Host-Pfad (bind-mount) oder ein Docker-Named-Volume, jeweils als /restore
+    in den Worker gebunden. Gibt den Exit-Code zurück.
+    """
+    config = _minimal_config(_resolve_repo_path())
+    extra_volumes: dict = {}
+    extra_env = {"DBORG_RESTORE_DIR": "/restore", "DBORG_STRIP": str(strip)}
+    if host_target:
+        try:
+            from pathlib import Path as _P
+            _P(host_target).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        extra_volumes[host_target] = {"bind": "/restore", "mode": "rw"}
+    elif volume_name:
+        extra_volumes[volume_name] = {"bind": "/restore", "mode": "rw"}
+    else:
+        return 2
+    exit_code, _ = _spawn_worker(
+        docker_client, config=config, mode="extract",
+        extra_args=[archive, sub_path], extra_volumes=extra_volumes,
+        extra_env=extra_env, on_log=on_log,
+    )
+    return exit_code
+
+
+def run_restore_inplace(container: ContainerInfo, archive: str, mounts: list[dict],
+                        compose_dir: str, db_hooks: list[dict], on_log) -> WorkerResult:
+    """Modus B — Komplett-Restore an den Originalort ('läuft wieder'):
+      1. Projekt-Container stoppen
+      2. Compose-Verzeichnis + Volumes (bind UND named) zurückschreiben
+      3. Container wieder starten
+      4. DB-Dumps einspielen (mit Retry, weil die DB nach dem Start erst
+         hochfahren muss)
+    """
+    start = time.time()
+    docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+    logs: list[LogEntry] = []
+    try:
+        targets = _resolve_all_project_containers(docker_client, container.compose_project)
+        names = [c.name for c in targets]
+
+        # 1. Stop
+        on_log(f"Stoppe {len(targets)} Container: {', '.join(names) or '(keine)'}", "info")
+        for c in targets:
+            try:
+                c.stop(timeout=30)
+            except Exception as e:  # noqa: BLE001
+                on_log(f"  Stop {c.name} fehlgeschlagen: {e}", "warning")
+
+        # 2. Compose-Verzeichnis
+        if compose_dir:
+            on_log(f"Compose-Verzeichnis → {compose_dir}", "info")
+            rc = _extract_to(docker_client, archive, "mnt/compose", 2, on_log, host_target=compose_dir)
+            if rc != 0:
+                on_log(f"  Compose-Restore exit {rc}", "warning")
+
+        # 2b. Volumes (bind + named)
+        for m in (mounts or []):
+            ap = (m.get("dest") or "").lstrip("/")
+            if not ap:
+                continue
+            strip = len(ap.split("/"))
+            if m.get("type") == "bind" and m.get("source"):
+                on_log(f"Volume (bind) {ap} → {m['source']}", "info")
+                _extract_to(docker_client, archive, ap, strip, on_log, host_target=m["source"])
+            elif m.get("type") == "volume" and m.get("name"):
+                on_log(f"Volume (named) {ap} → {m['name']}", "info")
+                _extract_to(docker_client, archive, ap, strip, on_log, volume_name=m["name"])
+
+        # 3. Start
+        on_log("Starte Container wieder…", "info")
+        for c in targets:
+            try:
+                c.start()
+            except Exception as e:  # noqa: BLE001
+                on_log(f"  Start {c.name} fehlgeschlagen: {e}", "warning")
+
+        # 4. DB-Replay mit Retry (DB braucht nach dem Start einen Moment)
+        if db_hooks:
+            import time as _t
+            ok = False
+            for attempt in range(1, 5):
+                on_log(f"DB-Dumps einspielen (Versuch {attempt}/4)…", "info")
+                _t.sleep(10)
+                dbres = run_db_restore(container, archive, db_hooks, on_log)
+                if dbres.success:
+                    ok = True
+                    break
+                on_log("  DB noch nicht bereit, neuer Versuch…", "warning")
+            if not ok:
+                on_log("DB-Replay nicht erfolgreich — bitte später über den "
+                        "'DB-Dumps zurückspielen'-Button nachholen.", "error")
+                logs.append(LogEntry("warning", "Files + Container wiederhergestellt, DB-Replay offen"))
+
+        duration = round(time.time() - start, 2)
+        on_log(f"Restore an Originalort abgeschlossen in {duration}s", "info")
+        return WorkerResult(True, JobResult(archive_name=archive, duration_seconds=duration), logs)
+    finally:
+        docker_client.close()
+
+
 def run_db_restore(container: ContainerInfo, archive: str, db_hooks: list[dict], on_log) -> WorkerResult:
     """Spielt DB-Dumps eines Archivs zurück in die laufenden DB-Container.
 

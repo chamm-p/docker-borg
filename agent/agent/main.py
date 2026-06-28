@@ -344,12 +344,30 @@ def _execute_job(job, containers, client: CentralClient):
 
         elif job.job_type == JobType.RESTORE:
             archive = job.params.get("archive", "")
-            sub_path = job.params.get("sub_path", "")
-            host_target = job.params.get("host_target", "")
-            structured = bool(job.params.get("structured", False))
-            r = worker.run_restore(archive, lambda m, lvl="info": stream(lvl, m),
-                                   sub_path=sub_path, host_target=host_target,
-                                   structured=structured)
+            mode = job.params.get("mode", "")
+            if mode == "inplace":
+                project = job.params.get("project", "")
+                mounts = job.params.get("mounts", [])
+                compose_dir = job.params.get("compose_dir", "")
+                db_hooks = job.params.get("db_hooks", [])
+                target_info = next((c for c in containers if c.compose_project == project), None)
+                if not target_info:
+                    from .models import ContainerInfo
+                    target_info = ContainerInfo(
+                        container_id="manual", container_name="(manual)",
+                        compose_project=project, compose_dir=compose_dir, root_files=[],
+                        image="", status="manual",
+                    )
+                r = worker.run_restore_inplace(
+                    target_info, archive, mounts, compose_dir, db_hooks,
+                    lambda m, lvl="info": stream(lvl, m))
+            else:
+                sub_path = job.params.get("sub_path", "")
+                host_target = job.params.get("host_target", "")
+                structured = bool(job.params.get("structured", False))
+                r = worker.run_restore(archive, lambda m, lvl="info": stream(lvl, m),
+                                       sub_path=sub_path, host_target=host_target,
+                                       structured=structured)
             for log in r.logs:
                 client.report_job(job.job_id, "running", logs=[log])
             client.report_job(

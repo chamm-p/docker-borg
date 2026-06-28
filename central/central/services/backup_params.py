@@ -70,6 +70,42 @@ def resources_for(agent: Agent) -> dict:
     }
 
 
+def restore_plan_for(container_row, db: Session) -> dict:
+    """Plan für einen Komplett-Restore an den Originalort eines Projekts:
+    compose_dir, die TATSÄCHLICH gesicherten Mounts (excludete + DB-Raw raus)
+    und die aktiven DB-Hooks (für den Dump-Replay).
+    """
+    mounts = _load_json(container_row.backup_mounts, [])
+    ex_mounts = set(_load_json(container_row.excluded_mounts, []))
+
+    hooks = (
+        db.query(DatabaseHook)
+        .filter(DatabaseHook.container_id == container_row.id, DatabaseHook.enabled == True)  # noqa: E712
+        .all()
+    )
+    active_keys = {_hook_key(h.db_type, h.hostname, h.db_name) for h in hooks}
+    # DB-Raw-Mounts (dump-only) ebenfalls ausschließen — die sind nicht im Archiv
+    for cand in _load_json(container_row.db_candidates, []):
+        key = _hook_key(cand.get("db_type", ""), cand.get("hostname", ""), cand.get("db_name", ""))
+        if key in active_keys:
+            raw = cand.get("raw_exclude")
+            if raw and raw.get("kind") == "mount" and raw.get("value"):
+                ex_mounts.add(raw["value"])
+
+    active_mounts = [m for m in mounts if m.get("dest") not in ex_mounts]
+    compose_dir = container_row.manual_compose_dir or container_row.compose_dir or ""
+    db_hooks = [
+        {"type": h.db_type, "name": h.db_name, "hostname": h.hostname,
+         "port": h.port, "username": h.username, "password": h.password}
+        for h in hooks
+    ]
+    return {
+        "compose_dir": compose_dir,
+        "mounts": active_mounts,
+        "db_hooks": db_hooks,
+    }
+
+
 def build_backup_params(agent: Agent, db: Session) -> tuple[list[str], dict]:
     """(projects, params) für einen Backup-Job dieses Agents.
 
