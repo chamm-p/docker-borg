@@ -1,22 +1,14 @@
-# Agent — lokal gebaut (ohne GHCR).
+# Agent — Image von GHCR (kein lokales Bauen).
 # Host-spezifische Werte kommen aus .env (siehe .env.example) — diese Datei
 # wird NIE manuell editiert.
-#
-# Baut zwei Images:
-#   - dborg-agent:local   (dieser Service, startet als Daemon)
-#   - dborg-worker:local  (Service "worker-build", startet NIE — nur Build)
-# Der Worker wird vom Agent zur Laufzeit per Docker-Socket gestartet,
-# deshalb muss das Image lokal vorliegen.
-#
-#   cp .env.example .env                       # einmalig, dann .env ausfüllen
-#   docker compose --profile build build       # baut agent + worker
-#   docker compose up -d                        # startet nur agent
+#   cp .env.example .env        # einmalig, dann .env ausfüllen
+#   docker compose pull
+#   docker compose up -d
+# Der Agent pullt das Worker-Image (ghcr.io/chamm-p/docker-borg-worker:latest)
+# beim Start automatisch. (Lokal bauen statt pullen? → docker-compose.build.yml)
 services:
   agent:
-    build:
-      context: ../../agent
-      dockerfile: Dockerfile
-    image: dborg-agent:local
+    image: ghcr.io/chamm-p/docker-borg-agent:latest
     container_name: dborg-agent
     restart: unless-stopped
     environment:
@@ -25,10 +17,6 @@ services:
       - DBORG_CENTRAL_URL=${DBORG_CENTRAL_URL:?set in .env}
       - DBORG_REGISTRATION_TOKEN=${DBORG_REGISTRATION_TOKEN:?set in .env}
       - DBORG_HOST_BASE_DIR=${DBORG_HOST_BASE_DIR:?set in .env}
-      # Lokal gebautes Worker-Image — kein Registry-Pull. Der Agent versucht
-      # beim Start trotzdem ein "docker pull" → die Warnung "Konnte Worker-Image
-      # nicht pullen" ist erwartet & harmlos, er nutzt das lokal gebaute Image.
-      - DBORG_WORKER_IMAGE=dborg-worker:local
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Mount-Source = DBORG_HOST_BASE_DIR (eine Quelle, keine Doppelpflege)
@@ -37,16 +25,6 @@ services:
     # Agent orchestriert nur — hartes, kleines Mem-Limit.
     mem_limit: 128m
     memswap_limit: 128m
-
-  # Baut NUR das Worker-Image lokal. Profil "build" → startet bei "up" nicht.
-  worker-build:
-    build:
-      context: ../../worker
-      dockerfile: Dockerfile
-    image: dborg-worker:local
-    entrypoint: ["true"]
-    profiles: ["build"]
-    restart: "no"
 
 volumes:
   agent-data:

@@ -1,13 +1,14 @@
-# Central / Backend — Image von GHCR (kein lokales Bauen).
+# Central / Backend — lokal gebaut (ohne GHCR).
 # Host-spezifische Werte kommen aus .env (siehe .env.example) — diese Datei
 # wird NIE manuell editiert.
-#   cp .env.example .env        # einmalig, dann .env ausfüllen
-#   docker compose pull
-#   docker compose up -d
-# (Lokal bauen statt pullen? → docker-compose.build.yml)
+#   cp .env.example .env   # einmalig, dann .env ausfüllen
+#   docker compose up -d --build
 services:
   central:
-    image: ghcr.io/chamm-p/docker-borg-central:latest
+    build:
+      context: ../../central
+      dockerfile: Dockerfile
+    image: dborg-central:local
     container_name: dborg-central
     restart: unless-stopped
     ports:
