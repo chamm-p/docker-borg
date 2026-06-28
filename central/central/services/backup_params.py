@@ -44,7 +44,13 @@ def build_borg_repo(agent: Agent) -> str:
             return f"ssh://{agent.scp_user}@{agent.scp_host}:{agent.scp_port or 22}/{base}"
         return ""
     if agent.backup_type == "local":
-        return agent.local_path or ""
+        base = (agent.local_path or "").strip().rstrip("/")
+        if not base:
+            return ""
+        host = _safe_host(agent.hostname)
+        if base.split("/")[-1] != host:
+            base = f"{base}/{host}"
+        return base
     return ""
 
 

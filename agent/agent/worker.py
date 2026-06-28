@@ -377,18 +377,23 @@ def _container_networks(target) -> list[str]:
     return [name for name in nets.keys() if name not in ("bridge", "host", "none")]
 
 
+def _safe_host(name: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in (name or "agent"))
+
+
 def _resolve_repo_path() -> str:
     """Path that the WORKER sees for the borg repo.
 
-    Für SCP nutzen wir direkt das von Central gebaute borg_repo (enthält schon
-    den Agent-Unterordner ssh://…/basis/<hostname>) — eine einzige Quelle,
-    keine doppelte URL-Konstruktion. Für 'local' ist das Repo ins /mnt/repo
-    Volume gemountet.
+    SCP: das von Central gebaute borg_repo (enthält schon den Agent-Unterordner
+    ssh://…/basis/<hostname>) — eine Quelle, keine doppelte URL-Konstruktion.
+    local: der lokale Pfad ist als /mnt/repo gemountet; das Repo liegt im
+    Unterordner /mnt/repo/<hostname> — so zeigt borg nie auf einen Share-Root
+    (der z.B. auf QNAP @Recycle/Metadaten enthält → 'already something').
     """
     if settings.backup_type == "scp":
         return settings.borg_repo or ""
     if settings.backup_type == "local":
-        return "/mnt/repo"
+        return f"/mnt/repo/{_safe_host(settings.agent_name)}"
     return "/mnt/repo"
 
 
