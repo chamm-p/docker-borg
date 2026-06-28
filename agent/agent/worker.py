@@ -42,6 +42,48 @@ def ensure_worker_image_fresh(docker_client) -> None:
         logger.warning("Konnte Worker-Image nicht pullen (%s) — nutze lokal gecachtes", e)
 
 
+def _looks_like_worker(container) -> bool:
+    """Erkennt einen (auch alten, label-losen) Backup-Worker-Container."""
+    labels = container.labels or {}
+    if labels.get("com.docker-borg.role") == "worker":
+        return True
+    if (container.name or "").startswith("dborg-worker-"):
+        return True
+    try:
+        img = container.image.tags[0] if container.image.tags else ""
+    except Exception:  # noqa: BLE001
+        img = ""
+    return "docker-borg-worker" in img or img.startswith("dborg-worker")
+
+
+def cleanup_stale_workers(docker_client=None) -> int:
+    """Räumt verwaiste Worker-Container weg (Abstürze, alte Versionen). Nur
+    NICHT laufende werden entfernt — ein gerade aktiver Worker bleibt unangetastet.
+    Beim Agent-Start aufgerufen. Gibt die Anzahl entfernter Container zurück.
+    """
+    own = docker_client is None
+    if own:
+        docker_client = docker.DockerClient(base_url=f"unix://{settings.docker_socket}")
+    removed = 0
+    try:
+        for c in docker_client.containers.list(all=True):
+            if c.status == "running":
+                continue
+            if not _looks_like_worker(c):
+                continue
+            try:
+                c.remove(force=True)
+                removed += 1
+            except Exception:  # noqa: BLE001
+                pass
+        if removed:
+            logger.info("Verwaiste Backup-Worker entfernt: %d", removed)
+    finally:
+        if own:
+            docker_client.close()
+    return removed
+
+
 def _detect_agent_data_volume(docker_client) -> str:
     """Find the actual docker volume name backing this agent's /data dir.
 
@@ -413,6 +455,12 @@ def _spawn_worker(
     run_kwargs: dict = {
         "image": WORKER_IMAGE,
         "command": [mode] + (extra_args or []),
+        "name": f"dborg-worker-{mode}-{job_token}",
+        "labels": {
+            "com.docker-borg.role": "worker",
+            "com.docker-borg.agent": settings.agent_name or "",
+            "com.docker-borg.mode": mode,
+        },
         "detach": True,
         "stdin_open": False,
         "tty": False,
@@ -613,6 +661,12 @@ def run_list_archives(on_log) -> tuple[WorkerResult, list[dict]]:
             image=WORKER_IMAGE,
             entrypoint="borg",
             command=["list", "--json"],
+            name=f"dborg-worker-list-{token}",
+            labels={
+                "com.docker-borg.role": "worker",
+                "com.docker-borg.agent": settings.agent_name or "",
+                "com.docker-borg.mode": "list",
+            },
             detach=True,
             stdin_open=False,
             tty=False,
