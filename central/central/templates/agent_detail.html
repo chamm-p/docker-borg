@@ -416,6 +416,12 @@ function revealPassphrase() {
                                 {% endif %}
                             </td>
                             <td>
+                                {% if c.status == 'absent' %}
+                                <span class="badge text-bg-secondary" title="Aktuell nicht gefunden (Projekt gestoppt oder entfernt). Deine Einstellungen bleiben erhalten und greifen wieder, sobald es zurück ist."><i class="bi bi-question-circle me-1"></i>abwesend</span>
+                                <form method="post" action="/agents/{{ agent.id }}/containers/{{ c.id }}/delete" class="d-inline m-0" onsubmit="return confirm('Eintrag „{{ c.compose_project }}“ entfernen? Nur sinnvoll, wenn das Projekt wirklich dauerhaft weg ist — die Backup-Einstellungen gehen damit verloren.')">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger ms-1" title="Eintrag entfernen"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
                                 {# Backup läuft sobald entweder ein Compose-Pfad gesetzt ist
                                    (Worker bind-mountet ihn direkt vom Docker-Host) ODER externe
                                    Mounts vorhanden sind ODER DB-Hooks (dumps gehen ins Archiv). #}
@@ -429,6 +435,7 @@ function revealPassphrase() {
                                     {% endif %}
                                 {% else %}
                                 <span class="badge text-bg-warning" title="Kein Compose-Pfad, keine externen Volumes, keine DB-Hooks — es würde nichts gesichert"><i class="bi bi-exclamation-triangle me-1"></i>nichts zu sichern</span>
+                                {% endif %}
                                 {% endif %}
                                 {% if c.backup_enabled and c._est_bytes %}
                                 <div class="small text-muted mt-1" title="Geschätzte unkomprimierte Größe der eingeschlossenen Inhalte{% if c._has_db_dump %} (DB-Roh-Verzeichnis exkludiert, Dump kommt zusätzlich){% endif %}"><i class="bi bi-hdd me-1"></i>~{{ c._est_bytes|bytesize }}{% if c._has_db_dump %} + Dump{% endif %}</div>

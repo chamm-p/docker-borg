@@ -1,4 +1,4 @@
-__version__ = "0.7.7"
+__version__ = "0.7.8"
 # v0.7.0 — WebDAV entfernt, SCP/SSH ist der Weg:
 # - WebDAV-Backup-Ziel komplett raus (UI-Option, Worker-rclone-Mount, fuse-Caps,
 #   Connection-Check). borg auf einem rclone-Mount ist nachweislich unzuverlässig

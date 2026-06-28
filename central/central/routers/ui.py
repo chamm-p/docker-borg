@@ -526,6 +526,17 @@ def dismiss_db_candidate(
     return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
 
 
+@router.post("/agents/{agent_id}/containers/{container_id}/delete")
+def delete_container(agent_id: int, container_id: int, db: Session = Depends(get_db)):
+    """Container-Eintrag manuell entfernen (z.B. ein wirklich gelöschtes
+    Projekt, das nur noch als 'abwesend' herumliegt)."""
+    row = db.query(Container).filter(Container.id == container_id, Container.agent_id == agent_id).first()
+    if row:
+        db.delete(row)
+        db.commit()
+    return RedirectResponse(f"/agents/{agent_id}?tab=containers", status_code=303)
+
+
 @router.post("/agents/{agent_id}/containers/{container_id}/db-hook")
 def add_db_hook(
     agent_id: int,

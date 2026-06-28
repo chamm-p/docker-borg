@@ -227,7 +227,12 @@ def heartbeat(
 
     for project, row in existing.items():
         if project not in seen:
-            db.delete(row)
+            # NICHT löschen — sonst gehen die User-Einstellungen (Container-
+            # Auswahl, Excludes, Hooks) verloren, sobald ein Projekt mal
+            # gestoppt ist oder die Discovery es kurz nicht sieht (z.B. direkt
+            # nach Agent-Neustart). Nur als abwesend markieren; die Einstellungen
+            # bleiben und greifen wieder, sobald das Projekt zurück ist.
+            row.status = "absent"
 
     db.flush()
 
