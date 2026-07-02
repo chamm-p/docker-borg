@@ -277,6 +277,30 @@ def _docker_exec_size(client: docker.DockerClient, container, dest: str) -> tupl
         return 0, False
 
 
+def _source_inside_compose_dir(source: str, compose_dir: str) -> bool:
+    """Liegt der Bind-Source im Compose-Verzeichnis? Symlink-tolerant.
+
+    Docker meldet in Mounts.Source den AUFGELÖSTEN Host-Pfad, das Compose-Label
+    aber den ggf. symbolischen (QNAP: /share/Container/x vs.
+    /share/CACHEDEV1_DATA/Container/x). Exakter Vergleich schlägt dann fehl und
+    Projekt-Ordner wie ./config tauchen fälschlich als externe Mounts auf.
+    Daher zusätzlich: die letzten beiden Pfad-Komponenten des Compose-Dirs
+    müssen als Segment im Source vorkommen.
+    """
+    if not source or not compose_dir:
+        return False
+    try:
+        Path(source).relative_to(compose_dir)
+        return True
+    except ValueError:
+        pass
+    parts = [p for p in Path(compose_dir).parts if p != "/"]
+    if not parts:
+        return False
+    tail = "/".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
+    return f"/{tail}/" in f"{source.rstrip('/')}/"
+
+
 def _get_backup_mounts(
     docker_client: docker.DockerClient,
     container,
@@ -299,12 +323,8 @@ def _get_backup_mounts(
             continue
         if source in SYSTEM_MOUNTS:
             continue
-        if mtype == "bind" and compose_dir_host:
-            try:
-                Path(source).relative_to(compose_dir_host)
-                continue
-            except ValueError:
-                pass
+        if mtype == "bind" and _source_inside_compose_dir(source, compose_dir_host):
+            continue  # gehört zum Projekt → über die Compose-Dir-Sicherung abgedeckt
         if source in seen_sources:
             continue
         seen_sources.add(source)
