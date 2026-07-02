@@ -96,18 +96,23 @@ def _detect_agent_data_volume(docker_client) -> str:
     if override:
         return override
     try:
-        import socket
-        our_id = socket.gethostname()  # Docker sets this to short container ID
-        me = docker_client.containers.get(our_id)
-        for m in me.attrs.get("Mounts", []):
-            if m.get("Destination") == "/data" and m.get("Type") == "volume":
-                name = m.get("Name")
-                if name:
-                    logger.info("Detected agent-data volume: %s", name)
-                    return name
+        from .selfid import own_container
+        me = own_container(docker_client)
+        if me is not None:
+            for m in me.attrs.get("Mounts", []):
+                if m.get("Destination") == "/data" and m.get("Type") == "volume":
+                    name = m.get("Name")
+                    if name:
+                        logger.info("Detected agent-data volume: %s", name)
+                        return name
     except Exception as e:
         logger.warning("Could not introspect own container for /data volume: %s", e)
-    return "agent-data"
+    # HART fehlschlagen statt still ein leeres 'agent-data'-Volume zu erzeugen —
+    # damit war der Worker-Config-Pfad leer ('No valid configuration files').
+    raise RuntimeError(
+        "agent-data Volume nicht erkennbar. Bitte DBORG_AGENT_DATA_VOLUME in der "
+        "Agent-Compose setzen (docker volume ls | grep agent-data zeigt den Namen)."
+    )
 
 
 @dataclass
@@ -485,22 +490,20 @@ def _spawn_worker(
         cpus = 0.0
     if cpus > 0:
         run_kwargs["nano_cpus"] = int(cpus * 1_000_000_000)
+    # KEIN --volumes-from mehr: das schleppte ALLE Mounts der Ziel-Container in
+    # den Worker — inkl. kaputter (gelöschtes anonymes Volume → 404 'no such
+    # volume') und exotischer (Datei-Mount in ein ro-Verzeichnis → 'read-only
+    # file system' beim Start). Die Backup-Mounts werden jetzt explizit über
+    # `volumes` gemountet; hier hängen wir nur noch das Compose-Netz an (für
+    # DB-Dumps über den Container-Namen).
     if volumes_from_target is not None:
-        if isinstance(volumes_from_target, list):
-            run_kwargs["volumes_from"] = [f"{c.name}:ro" for c in volumes_from_target]
-            primary = volumes_from_target[0]
-        else:
-            run_kwargs["volumes_from"] = [f"{volumes_from_target.name}:ro"]
-            primary = volumes_from_target
+        primary = volumes_from_target[0] if isinstance(volumes_from_target, list) else volumes_from_target
         nets = _container_networks(primary)
         if nets:
             run_kwargs["network"] = nets[0]
             on_log(f"Network: {nets[0]}", "info")
 
     on_log(f"Starte Worker ({mode}) — Image {WORKER_IMAGE}", "info")
-    if volumes_from_target is not None:
-        for vfrom in run_kwargs.get("volumes_from", []):
-            on_log(f"--volumes-from {vfrom}", "info")
 
     worker = docker_client.containers.run(**run_kwargs)
     with _active_lock:
@@ -569,11 +572,33 @@ def run_backup(container: ContainerInfo, on_log,
         if container.compose_dir:
             extra_volumes[container.compose_dir] = {"bind": "/mnt/compose", "mode": "ro"}
 
+        # Backup-Mounts EXPLIZIT mounten (statt --volumes-from, das alle Mounts
+        # der Ziel-Container mitschleppte — inkl. kaputter/exotischer).
+        excluded = set(excluded_mounts or [])
+        seen_dests: set[str] = set()
+        for m in (container.backup_mounts or []):
+            dest = m.get("dest") or ""
+            if not dest or dest in excluded or dest in seen_dests:
+                continue
+            if m.get("type") == "volume" and m.get("name"):
+                try:
+                    docker_client.volumes.get(m["name"])
+                except Exception:  # noqa: BLE001
+                    on_log(f"Volume {m['name']} existiert nicht mehr — übersprungen", "warning")
+                    continue
+                extra_volumes[m["name"]] = {"bind": dest, "mode": "ro"}
+                seen_dests.add(dest)
+                on_log(f"Mount (volume) {m['name']} → {dest}", "info")
+            elif m.get("type") == "bind" and m.get("source"):
+                extra_volumes[m["source"]] = {"bind": dest, "mode": "ro"}
+                seen_dests.add(dest)
+                on_log(f"Mount (bind) {m['source']} → {dest}", "info")
+
         exit_code, _ = _spawn_worker(
             docker_client,
             config=config,
             mode="create",
-            volumes_from_target=targets,
+            volumes_from_target=targets,   # nur noch fürs Compose-Netz (DB-Dumps)
             extra_volumes=extra_volumes,
             extra_env={"DBORG_PRUNE": "1"} if prune else None,
             resources=resources,

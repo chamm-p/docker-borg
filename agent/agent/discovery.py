@@ -329,8 +329,10 @@ def _own_compose_project(client: docker.DockerClient) -> str | None:
     Mini-Archive pro Lauf erzeugen.
     """
     try:
-        import socket as _socket
-        me = client.containers.get(_socket.gethostname())
+        from .selfid import own_container
+        me = own_container(client)
+        if me is None:
+            return None
         return (me.labels or {}).get("com.docker.compose.project")
     except Exception:  # noqa: BLE001
         return None
