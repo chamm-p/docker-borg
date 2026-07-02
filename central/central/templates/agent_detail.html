@@ -476,7 +476,7 @@ function revealPassphrase() {
                                     {% endif %}
 
                                     {% if c._backup_mounts %}
-                                    <p class="small text-muted mb-2"><strong><i class="bi bi-hdd-stack me-1"></i>Externe Mounts</strong> — Volumes &amp; Bind-Mounts außerhalb des Compose-Verzeichnisses. Hier sitzt typischerweise die Plex-Mediathek oder ähnliches Schweres.</p>
+                                    <p class="small text-muted mb-2"><strong><i class="bi bi-hdd-stack me-1"></i>Externe Mounts</strong> — Volumes &amp; Bind-Mounts außerhalb des Compose-Verzeichnisses. <strong>Bind-Mounts auf Host-Pfade (z.B. <code>/Videos</code>, <code>/Public/Downloads</code>) sind per Default nicht im Backup</strong> — Häkchen setzen, um sie gezielt aufzunehmen. Docker-Volumes (App-Daten) sind per Default drin.</p>
                                     <div class="row g-1 mb-3">
                                         {% for m in c._backup_mounts %}
                                         {% set _is_excl = m.dest in c._excluded_mounts %}

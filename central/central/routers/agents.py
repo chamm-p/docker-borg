@@ -43,6 +43,16 @@ def looks_like_db_storage(dest: str) -> bool:
     return False
 
 
+def _default_excluded_mounts(backup_mounts: list[dict]) -> list[str]:
+    """Externe BIND-Mounts (Host-Pfade außerhalb des Compose-Verzeichnisses,
+    z.B. /Videos, /Public/Downloads) sind per Default NICHT im Backup — das
+    sind typischerweise große Medien-Shares. Im UI opt-in zuschaltbar.
+    Docker-Named-Volumes (App-Daten) bleiben per Default drin.
+    """
+    return [m["dest"] for m in (backup_mounts or [])
+            if m.get("type") == "bind" and m.get("dest")]
+
+
 def _candidate_key(cand: dict) -> str:
     return f"{cand.get('db_type', '')}:{cand.get('container', '')}:{cand.get('db_name', '')}"
 
@@ -198,8 +208,10 @@ def heartbeat(
             row.backup_mounts = json.dumps(c.backup_mounts or [])
             row.top_level_entries = json.dumps(c.top_level_entries or [])
             row.db_candidates = json.dumps(c.db_candidates or [])
-            # Defaults bei Erst-Discovery: alles drin lassen, Power-User
-            # excluded selbst. Keine Auto-Excludes von DB-Pfaden.
+            # Solange der User die Mount-Auswahl nicht selbst angefasst hat,
+            # gilt der Default: externe Bind-Mounts (Medien-Shares) raus.
+            if not row.mounts_user_edited:
+                row.excluded_mounts = json.dumps(_default_excluded_mounts(c.backup_mounts or []))
         else:
             new_row = Container(
                 agent_id=agent.id,
@@ -213,7 +225,7 @@ def heartbeat(
                 has_volumes=c.has_volumes,
                 compose_dir_accessible=c.compose_dir_accessible,
                 backup_mounts=json.dumps(c.backup_mounts or []),
-                excluded_mounts=json.dumps([]),
+                excluded_mounts=json.dumps(_default_excluded_mounts(c.backup_mounts or [])),
                 top_level_entries=json.dumps(c.top_level_entries or []),
                 excluded_entries=json.dumps(
                     [e["name"] for e in (c.top_level_entries or []) if e.get("default_excluded")]
