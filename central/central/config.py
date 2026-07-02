@@ -12,6 +12,17 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     agent_offline_seconds: int = 120
 
+    # E-Mail-Benachrichtigung (alles via .env; leer = deaktiviert)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""            # leer = smtp_user
+    smtp_to: str = ""              # Empfänger (mehrere: kommagetrennt)
+    smtp_tls: bool = True          # STARTTLS (Port 587)
+    smtp_ssl: bool = False         # implizites TLS (Port 465)
+    notify: str = "failure"        # failure | always | off
+
     model_config = {"env_prefix": "DBORG_"}
 
 

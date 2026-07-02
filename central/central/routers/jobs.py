@@ -85,6 +85,21 @@ def update_job_status(
         db.add(JobLog(job_id=job.id, level=log.level, message=log.message, timestamp=ts))
 
     db.commit()
+
+    # E-Mail-Benachrichtigung bei Job-Abschluss (async, blockiert den Agent nicht)
+    if update.status in ("success", "failed"):
+        from ..services import notify
+        if notify.should_notify(job.job_type, update.status):
+            tail_logs = (
+                db.query(JobLog)
+                .filter(JobLog.job_id == job.id)
+                .order_by(JobLog.timestamp.desc())
+                .limit(20)
+                .all()
+            )
+            tail = [f"[{l.level}] {l.message}" for l in reversed(tail_logs)]
+            notify.send_job_mail(agent.hostname, job.id, job.job_type, update.status, tail)
+
     return {"ack": True}
 
 

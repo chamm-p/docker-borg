@@ -18,6 +18,16 @@ services:
       - DBORG_ADMIN_PASSWORD=${DBORG_ADMIN_PASSWORD:?set in .env}
       - DBORG_SECRET_KEY=${DBORG_SECRET_KEY:?set in .env}
       - DBORG_LOG_LEVEL=${DBORG_LOG_LEVEL:-INFO}
+      # E-Mail-Benachrichtigung (optional — leer lassen = aus)
+      - DBORG_SMTP_HOST=${DBORG_SMTP_HOST:-}
+      - DBORG_SMTP_PORT=${DBORG_SMTP_PORT:-587}
+      - DBORG_SMTP_USER=${DBORG_SMTP_USER:-}
+      - DBORG_SMTP_PASSWORD=${DBORG_SMTP_PASSWORD:-}
+      - DBORG_SMTP_FROM=${DBORG_SMTP_FROM:-}
+      - DBORG_SMTP_TO=${DBORG_SMTP_TO:-}
+      - DBORG_SMTP_TLS=${DBORG_SMTP_TLS:-true}
+      - DBORG_SMTP_SSL=${DBORG_SMTP_SSL:-false}
+      - DBORG_NOTIFY=${DBORG_NOTIFY:-failure}
     volumes:
       - central-data:/app/data
 
