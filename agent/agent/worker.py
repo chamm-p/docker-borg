@@ -1,12 +1,13 @@
 """Orchestrates the docker-borg-worker container per backup operation.
 
 The agent itself does NOT run borg; it only orchestrates ephemeral worker
-containers. Each worker mounts the target compose containers' volumes via
---volumes-from and runs borgmatic.
+containers. Each worker mounts the backup mounts of the target compose
+project explicitly (read-only) and runs borgmatic.
 
 Volume sharing between agent and worker:
-- The agent's data dir (auto-detected volume, mounted at /data
-  in both) carries borgmatic configs, ssh keys, borg cache, etc.
+- The agent's data dir (auto-detected volume; im Agent unter /data, im Worker
+  unter /dborg-data — damit Ziel-Volumes auf /data nicht kollidieren) carries
+  borgmatic configs, ssh keys, borg cache, etc.
 """
 from __future__ import annotations
 
@@ -420,15 +421,15 @@ def _spawn_worker(
     job_token = uuid.uuid4().hex[:12]
     config_dir_agent = Path("/data/shared") / job_token
     config_dir_agent.mkdir(parents=True, exist_ok=True)
-    config_path_worker = f"/data/shared/{job_token}/config.yaml"
+    config_path_worker = f"/dborg-data/shared/{job_token}/config.yaml"
     _write_yaml(config, config_dir_agent / "config.yaml")
 
     env = {
         "BORG_PASSPHRASE": settings.borg_passphrase or "",
         "BORG_RELOCATED_REPO_ACCESS_IS_OK": "yes",
         "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK": "yes",
-        "BORG_CACHE_DIR": "/data/borg-cache",
-        "BORG_CONFIG_DIR": "/data/borg-config",
+        "BORG_CACHE_DIR": "/dborg-data/borg-cache",
+        "BORG_CONFIG_DIR": "/dborg-data/borg-config",
         "BORG_REPO": _resolve_repo_path(),
         "DBORG_CONFIG_PATH": config_path_worker,
         "TZ": os.environ.get("TZ", "UTC"),
@@ -438,15 +439,16 @@ def _spawn_worker(
     }
     if settings.backup_type == "scp":
         env["BORG_RSH"] = (
-            "ssh -i /data/ssh/id_ed25519 "
-            "-o UserKnownHostsFile=/data/ssh/known_hosts "
+            "ssh -i /dborg-data/ssh/id_ed25519 "
+            "-o UserKnownHostsFile=/dborg-data/ssh/known_hosts "
             "-o StrictHostKeyChecking=accept-new "
             "-o BatchMode=yes"
         )
     if extra_env:
         env.update(extra_env)
 
-    volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/data", "mode": "rw"}}
+    # agent-data auf /dborg-data — /data bleibt frei für Ziel-Volumes der Projekte
+    volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/dborg-data", "mode": "rw"}}
     if settings.backup_type == "local" and settings.local_path:
         volumes[settings.local_path] = {"bind": "/mnt/repo", "mode": "rw"}
     if extra_volumes:
@@ -574,11 +576,17 @@ def run_backup(container: ContainerInfo, on_log,
 
         # Backup-Mounts EXPLIZIT mounten (statt --volumes-from, das alle Mounts
         # der Ziel-Container mitschleppte — inkl. kaputter/exotischer).
+        # Worker-interne Pfade sind tabu (agent-data liegt auf /dborg-data,
+        # damit übliche Ziel-Pfade wie /data frei sind).
+        reserved = {"/dborg-data", "/mnt/compose", "/mnt/repo", "/restore"}
         excluded = set(excluded_mounts or [])
         seen_dests: set[str] = set()
         for m in (container.backup_mounts or []):
             dest = m.get("dest") or ""
             if not dest or dest in excluded or dest in seen_dests:
+                continue
+            if dest in reserved:
+                on_log(f"Mount-Ziel {dest} kollidiert mit Worker-Pfad — übersprungen", "warning")
                 continue
             if m.get("type") == "volume" and m.get("name"):
                 try:
@@ -617,7 +625,7 @@ def run_backup(container: ContainerInfo, on_log,
 def _minimal_config(repo_path: str) -> dict:
     """borgmatic-Config für Operationen ohne Source-Dirs (check, prune, list, restore)."""
     return {
-        "source_directories": ["/data/borg-cache"],  # dummy, nicht verwendet
+        "source_directories": ["/dborg-data/borg-cache"],  # dummy, nicht verwendet
         "repositories": [{"path": repo_path}],
     }
 
@@ -665,19 +673,20 @@ def run_list_archives(on_log) -> tuple[WorkerResult, list[dict]]:
             "BORG_PASSPHRASE": settings.borg_passphrase or "",
             "BORG_RELOCATED_REPO_ACCESS_IS_OK": "yes",
             "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK": "yes",
-            "BORG_CACHE_DIR": "/data/borg-cache",
-            "BORG_CONFIG_DIR": "/data/borg-config",
+            "BORG_CACHE_DIR": "/dborg-data/borg-cache",
+            "BORG_CONFIG_DIR": "/dborg-data/borg-config",
             "BORG_REPO": _resolve_repo_path(),
             "TZ": os.environ.get("TZ", "UTC"),
         }
         if settings.backup_type == "scp":
             env["BORG_RSH"] = (
-                "ssh -i /data/ssh/id_ed25519 "
-                "-o UserKnownHostsFile=/data/ssh/known_hosts "
+                "ssh -i /dborg-data/ssh/id_ed25519 "
+                "-o UserKnownHostsFile=/dborg-data/ssh/known_hosts "
                 "-o StrictHostKeyChecking=accept-new -o BatchMode=yes"
             )
 
-        volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/data", "mode": "rw"}}
+        # agent-data auf /dborg-data — /data bleibt frei für Ziel-Volumes der Projekte
+        volumes: dict = {_detect_agent_data_volume(docker_client): {"bind": "/dborg-data", "mode": "rw"}}
         if settings.backup_type == "local" and settings.local_path:
             volumes[settings.local_path] = {"bind": "/mnt/repo", "mode": "rw"}
 
@@ -785,7 +794,7 @@ def run_restore(archive: str, on_log, sub_path: str = "", host_target: str = "",
         extra_volumes[host_target] = {"bind": "/restore", "mode": "rw"}
         extra_env["DBORG_RESTORE_DIR"] = "/restore"
     else:
-        extra_env["DBORG_RESTORE_DIR"] = "/data/restore"
+        extra_env["DBORG_RESTORE_DIR"] = "/dborg-data/restore"
 
     try:
         config = _minimal_config(_resolve_repo_path())
