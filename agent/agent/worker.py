@@ -344,6 +344,14 @@ def _yaml_scalar(v) -> str:
     # Tokens that would parse as booleans/null without quotes
     if s.lower() in {"true", "false", "yes", "no", "null", "~", "on", "off"}:
         return json.dumps(s)
+    # Numerisch aussehende Strings quoten — sonst wird z.B. das DB-Passwort
+    # "12345678" als YAML-Zahl gelesen und borgmatic lehnt es ab
+    # ("is not of type 'string'").
+    try:
+        float(s)
+        return json.dumps(s)
+    except ValueError:
+        pass
     return s
 
 
@@ -577,8 +585,12 @@ def run_backup(container: ContainerInfo, on_log,
         # Backup-Mounts EXPLIZIT mounten (statt --volumes-from, das alle Mounts
         # der Ziel-Container mitschleppte — inkl. kaputter/exotischer).
         # Worker-interne Pfade sind tabu (agent-data liegt auf /dborg-data,
-        # damit übliche Ziel-Pfade wie /data frei sind).
-        reserved = {"/dborg-data", "/mnt/compose", "/mnt/repo", "/restore"}
+        # damit übliche Ziel-Pfade wie /data frei sind). Ephemere/System-Ziele
+        # ebenfalls: ein ro-Mount auf /tmp nimmt borgmatic sein Temp-Verzeichnis
+        # ([Errno 30] Read-only file system: /tmp/borgmatic-…), und tmpfs-Inhalte
+        # sind ohnehin nicht sicherungswürdig.
+        reserved = {"/dborg-data", "/mnt/compose", "/mnt/repo", "/restore",
+                    "/", "/tmp", "/var/tmp", "/run", "/dev/shm"}
         excluded = set(excluded_mounts or [])
         seen_dests: set[str] = set()
         for m in (container.backup_mounts or []):
