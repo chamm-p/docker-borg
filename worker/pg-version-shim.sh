@@ -34,14 +34,20 @@ for arg in "$@"; do
 done
 
 # Determine server major version. PGPASSWORD is in env (set by borgmatic).
+# Der Verbindungstest ist zugleich Diagnose: schlägt er fehl, wird pg_dump auch
+# scheitern (0 Bytes → borgmatic crasht mit kryptischem NoneType-Traceback).
+# Deshalb den psql-Fehler NICHT verschlucken, sondern klar nach stderr melden.
 MAJOR=""
 if [ -n "$HOST" ] && [ -n "$USER" ]; then
-    PGCONNECT_TIMEOUT=5 \
-    VER_NUM=$(psql -h "$HOST" ${PORT:+-p $PORT} -U "$USER" -d "${DBNAME:-postgres}" \
-        -t -A -c "SHOW server_version_num;" 2>/dev/null || echo "")
+    VER_NUM=$(PGCONNECT_TIMEOUT=5 psql -h "$HOST" ${PORT:+-p $PORT} -U "$USER" \
+        -d "${DBNAME:-postgres}" -t -A -c "SHOW server_version_num;" 2>/tmp/dborg-pgconn.err) || true
     if [ -n "$VER_NUM" ]; then
         # server_version_num: e.g. 160013 → 16, 170002 → 17
         MAJOR=$(echo "$VER_NUM" | awk '{print int($1/10000)}')
+    else
+        echo "dborg-pg-shim: DB-VERBINDUNG FEHLGESCHLAGEN zu ${USER}@${HOST}${PORT:+:$PORT}/${DBNAME:-postgres} — der Dump wird scheitern. Grund:" >&2
+        sed 's/^/dborg-pg-shim:   /' /tmp/dborg-pgconn.err >&2 2>/dev/null || true
+        echo "dborg-pg-shim: Prüfe DB-Hook (Host/Container-Name im Compose-Netz, User, Passwort, DB-Name) im Central-UI." >&2
     fi
 fi
 
